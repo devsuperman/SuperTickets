@@ -6,7 +6,7 @@ Technical design for the business flow and rules defined in [business-plan.md](b
 
 | Concern | Choice |
 |---|---|
-| Services | ASP.NET Core Minimal APIs (.NET 8) |
+| Services | ASP.NET Core Minimal APIs (.NET 10) |
 | Workers | .NET `BackgroundService` (Worker Service template) |
 | Frontend | React + Vite, fetch + `@tanstack/query` |
 | Database | Amazon RDS for PostgreSQL |
@@ -18,6 +18,8 @@ Technical design for the business flow and rules defined in [business-plan.md](b
 | Frontend hosting | S3 + CloudFront |
 | IaC | AWS CDK in C# |
 | CI/CD | GitHub Actions → ECR → ECS; S3 sync + CloudFront invalidation for the SPA |
+
+All .NET projects (services, workers, CDK) target .NET 10 (`net10.0`).
 
 ## Request path
 

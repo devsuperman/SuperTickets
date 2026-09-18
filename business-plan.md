@@ -1,4 +1,4 @@
-# Minimal Ticket MVP Plan
+# Business Plan
 
 ## Goal
 
@@ -14,18 +14,6 @@ Keep the MVP focused on a single business flow:
 - Payment is simulated
 - Order success triggers async processing
 - Ticket confirmation is generated
-
-Remove everything that is not necessary for that flow:
-
-- No multi-tenant organizers
-- No coupons or discounts
-- No seat maps
-- No refunds for v1
-- No complex admin dashboard
-- No real payment provider integration
-- No email provider integration
-- No tax/VAT logic
-- No multi-event organizer management
 
 ## Business rules
 

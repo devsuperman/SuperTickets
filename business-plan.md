@@ -58,6 +58,7 @@ Keep the MVP focused on a single business flow:
 2. Inventory is checked and reserved.
 3. Payment is simulated successfully or fails.
 4. Order status moves from pending to paid or cancelled.
+5. A pending order not resolved within N minutes is cancelled and its inventory released.
 
 ### Messaging and processing
 

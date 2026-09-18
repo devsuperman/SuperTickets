@@ -80,6 +80,25 @@ Order.Api/
 - Payment queue: simulate payment, publish `PaymentSucceeded`/`PaymentFailed`, update order status, release inventory on failure.
 - Notification queue: consume `PaymentSucceeded`, generate the ticket record, log the confirmation.
 
+## Resilience patterns
+
+Ordered by priority; each one only where a real failure point exists.
+
+| Pattern | Where | Why |
+|---|---|---|
+| Idempotency | `POST /orders` (`Idempotency-Key` header, unique index in Order DB). Inventory `reserve`/`release` keyed by `orderId` (unique reservation row). Payment worker: unique `orderId` in a processed table. Notification worker: unique constraint on ticket `orderId`. | SQS is at-least-once and clients retry. Makes retries safe. |
+| Timeout + retry (backoff + jitter) | Order → Inventory HTTP call, via `Microsoft.Extensions.Http.Resilience` (Polly v8). AWS SDK already retries SNS/SQS calls. | Retry only once idempotency exists. Always set a timeout. |
+| Circuit breaker | Same Order → Inventory handler. When open, return `503` fast. | Same package as retry, near-zero extra code. |
+| Transactional outbox | Order Service writes the order and an `OrderCreated` row in one transaction; a `BackgroundService` publishes to SNS. Same for `PaymentSucceeded`/`PaymentFailed` in the worker. | Avoids the dual write (order saved, SNS publish failed, order stuck `pending`). |
+| Dead-letter queue | `maxReceiveCount` + DLQ on both SQS queues. | Poison messages stop looping. |
+| Saga (choreography) + expiry | `PaymentFailed` → release inventory is the compensation. A sweeper cancels `pending` orders older than N minutes and releases stock. | Covers lost messages and crashed workers. |
+| Graceful degradation | Catalog falls back to Postgres if Redis is down; jitter the TTL. | The cache is an optimization, not a dependency. |
+| Health checks + correlation ID | `/health` per service (ALB target health). Correlation ID in HTTP headers and message attributes. | Cheap, and needed to observe the rest. |
+
+Not adopted: service mesh, CQRS, event sourcing, bulkheads (API Gateway throttling covers it), full tracing stack.
+
+Demo toggles: config for payment failure rate and Inventory delay/error rate, to trigger retries, the open breaker, the DLQ and compensation on demand.
+
 ## Database
 
 One RDS PostgreSQL instance with one database per service (Catalog, Inventory, Order).
@@ -96,7 +115,7 @@ One RDS PostgreSQL instance with one database per service (Catalog, Inventory, O
 2. Catalog Service → ECS Fargate, backed by Redis cache.
 3. Inventory Service → ECS Fargate.
 4. Order Service → ECS Fargate + SNS topic.
-5. Payment/Notification Worker → ECS Fargate service (no ingress) + 2 SQS queues.
+5. Payment/Notification Worker → ECS Fargate service (no ingress) + 2 SQS queues, each with a DLQ. Order/Payment publish through an outbox table.
 6. Internal ALB in front of Catalog (2 tasks).
 7. API Gateway (HTTP API) with VPC Link to the ALB.
 8. React SPA → S3 + CloudFront, pointed at the API Gateway URL.

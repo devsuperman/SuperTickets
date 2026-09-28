@@ -7,8 +7,8 @@ SuperTickets: minimal ticket-selling app built to exercise cache, message broker
 ## Docs
 
 - Business rules and scope → [business-plan.md](business-plan.md)
-- Architecture, stack, AWS design → [tech-plan.md](tech-plan.md)
-- [README.md](README.md) summarizes both (flow, services, resilience patterns, local dev)
+- Architecture, local Docker Compose stack, AWS publish stack → [tech-plan.md](tech-plan.md)
+- [README.md](README.md) summarizes both (AI-native approach, flow, services, local run, AWS publish, resilience patterns)
 
 Read the relevant one before proposing a change. When a decision changes, update that doc and check README.md's summary still matches — don't restate its content here.
 

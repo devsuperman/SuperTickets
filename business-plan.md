@@ -76,3 +76,17 @@ Keep the MVP focused on a single business flow:
    - event id
    - customer id or guest reference
    - status: valid, used, cancelled
+
+## MVP interpretations
+
+Where a rule above leaves room, the MVP takes the smallest reading:
+
+- **Customer identity.** No accounts. A customer is a guest identified by the email given at checkout; that email is the ticket's guest reference.
+- **Search.** Case-insensitive text match on event name or venue, over events that have not started yet.
+- **Cart.** Lives in the browser only. The cart holds tickets for one event, and checkout places one order for it.
+- **One or more tickets.** An order is for one event and a quantity of 1–10 tickets. It gets one ticket record per ticket.
+- **Price.** Shown to the customer; the order does not store an amount, since payment is simulated.
+- **Admin.** A single shared API key, no admin accounts.
+- **"Sold" for capacity changes.** Tickets reserved by pending orders count as sold, so the admin cannot cut capacity below them either.
+- **N minutes.** 5 by default, configurable.
+- **Ticket status.** Tickets are created `valid`. Nothing in the MVP moves them to `used` or `cancelled`.

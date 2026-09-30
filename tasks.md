@@ -127,6 +127,8 @@ Unblocks T08 and T09. Highest priority in wave 1.
 
 ### T07 — CDK: Data + Messaging stacks
 
+Spec: [aws-publish.md](aws-publish.md) (network, sizing, IAM, routing, stack contents).
+
 Does not depend on any app code; can start before T01.
 
 - `infra/cdk/SuperTickets.Cdk` (C#, `net10.0`, own `cdk.json`), `Program.cs` creating the app.
@@ -194,6 +196,8 @@ Needs T01 and T04.
 
 ### T13 — CDK: Services stack + internal ALB
 
+Spec: [aws-publish.md](aws-publish.md) (network, sizing, IAM, routing, stack contents).
+
 Needs T07 (and the Dockerfiles from T01).
 
 - ECS cluster; four Fargate services from `ContainerImage.FromAsset` (repo root context, each Dockerfile); Catalog with `desiredCount: 2`; the worker with no load balancer.
@@ -205,6 +209,8 @@ Needs T07 (and the Dockerfiles from T01).
 **Done when:** `cdk synth` succeeds; if deployed, all services are healthy in their target groups.
 
 ### T14 — CDK: Web hosting stack
+
+Spec: [aws-publish.md](aws-publish.md) (network, sizing, IAM, routing, stack contents).
 
 Needs T07 for the app structure only.
 
@@ -220,6 +226,8 @@ Needs T07 for the app structure only.
 
 ### T15 — CDK: API Gateway stack
 
+Spec: [aws-publish.md](aws-publish.md) (network, sizing, IAM, routing, stack contents).
+
 Needs T13.
 
 - `ApiStack`: HTTP API, VPC Link into the VPC, ALB listener integration, the seven public routes only (no `/inventory/*`), default route throttling.
@@ -232,7 +240,7 @@ Needs T13.
 
 Needs T02, T05, T06, T08, T09 (and T10, T11 for the manual UI pass).
 
-- `scripts/smoke.sh` (bash + curl + jq) against `docker compose up`, checking the local half of the [Definition of done](tech-plan.md#definition-of-done): create an event (admin key), list it (MISS then HIT), buy end to end until `paid` with tickets, race two orders for the last ticket (one 202, one 409), set `Payment__FailureRate=1` and see `cancelled` plus availability restored, set `Demo__NotificationErrorRate=1` and see the message in `notification-dlq`. Take `BASE_URL` (default `http://localhost:5173`) and skip the toggle checks with `--no-toggles`, so T18 can reuse it on AWS.
+- `scripts/smoke.sh` (bash + curl + jq) against `docker compose up`, checking the [application Definition of done](tech-plan.md#definition-of-done-application): create an event (admin key), list it (MISS then HIT), buy end to end until `paid` with tickets, race two orders for the last ticket (one 202, one 409), set `Payment__FailureRate=1` and see `cancelled` plus availability restored, set `Demo__NotificationErrorRate=1` and see the message in `notification-dlq`. Take `BASE_URL` (default `http://localhost:5173`) and skip the toggle checks with `--no-toggles`, so T18 can reuse it on AWS.
 - Fix any integration bugs found; each fix goes in the owning project.
 - README "Running locally" and CLAUDE.md: add the smoke command.
 
@@ -245,10 +253,12 @@ Needs T02, T05, T06, T08, T09 (and T10, T11 for the manual UI pass).
 
 ### T17 — CD pipeline
 
+Spec: [aws-publish.md](aws-publish.md) (network, sizing, IAM, routing, stack contents).
+
 Needs T12, T14, T15.
 
 - `.github/workflows/deploy.yml` on push to `main` (after CI): AWS credentials via GitHub OIDC (the role is created once by hand or in a small bootstrap stack; document which), `npm ci && npm run build` in `src/web`, `cdk deploy --all --require-approval never`.
-- Document the one-time setup (`cdk bootstrap`, the OIDC role, repo variables) in tech-plan.md.
+- Document the one-time setup (`cdk bootstrap`, the OIDC role, repo variables) in [aws-publish.md](aws-publish.md#deploying).
 
 **Owns:** `.github/workflows/deploy.yml`.
 **Done when:** a merge to `main` deploys without manual steps.
@@ -257,7 +267,7 @@ Needs T12, T14, T15.
 
 Needs T16 and T17. Needs a person with the AWS account.
 
-- Deploy, then check every Definition of done bullet through the CloudFront/API Gateway URL: run `BASE_URL=<cloudfront url> scripts/smoke.sh --no-toggles`, confirm both Catalog tasks serve traffic (task ID in logs), and confirm Redis hits.
+- Deploy, then check every [published Definition of done](aws-publish.md#definition-of-done) bullet through the CloudFront/API Gateway URL: run `BASE_URL=<cloudfront url> scripts/smoke.sh --no-toggles`, confirm both Catalog tasks serve traffic (task ID in logs), and confirm Redis hits.
 - README: set Status to done, with the verification date. Tear down with `cdk destroy --all` if not keeping it running.
 
 **Done when:** every Definition of done bullet is checked off in the PR description.

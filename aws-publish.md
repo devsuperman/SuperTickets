@@ -1,186 +1,129 @@
 # AWS Publish
 
-How SuperTickets is published to AWS: which service runs each piece, how traffic flows, what every CDK stack creates, and how the pipeline deploys it. The application itself (services, code structure, resilience patterns, local run) is in [tech-plan.md](tech-plan.md); the shared routes, config keys and routing rules are in [contracts.md](contracts.md).
+AWS infrastructure for the same images and SPA build used locally. App design: [tech-plan.md](tech-plan.md). Keys and routes: [contracts.md](contracts.md).
 
-The same container images and SPA build that run on `docker compose` are deployed here. Only configuration differs; nothing in the application code knows it is on AWS.
+## Mapping
 
-## Service mapping
-
-| Piece | Local (Compose) | AWS |
+| Piece | Local | AWS |
 |---|---|---|
-| Catalog, Inventory, Order, Worker | containers | ECS Fargate services; images built and pushed to ECR by CDK (`ContainerImage.FromAsset`) |
-| Database | `postgres` | Amazon RDS for PostgreSQL, one instance with the three databases |
-| Cache | `redis` | Amazon ElastiCache for Redis |
-| Broker | `localstack` (SNS + SQS) | Amazon SNS + SQS |
-| Public entry point | Vite dev server proxy | CloudFront → API Gateway (HTTP API) |
-| Load balancer | none (one instance each) | Internal Application Load Balancer, behind API Gateway via VPC Link |
-| SPA hosting | Vite dev server | S3 + CloudFront |
-| Secrets | plain values in `docker-compose.yml` | AWS Secrets Manager |
-| IaC | — | AWS CDK in C# (`net10.0`) |
-| CI/CD | — | GitHub Actions: build and test on every PR; `cdk deploy --all` on `main` via OIDC |
+| APIs + Worker | Compose containers | ECS Fargate; images via CDK `ContainerImage.FromAsset` |
+| Database | `postgres` | RDS PostgreSQL |
+| Cache | `redis` | ElastiCache Redis |
+| Broker | LocalStack | SNS + SQS |
+| Entry point | Vite proxy | CloudFront → API Gateway (HTTP API) |
+| Load balancer | — | Internal ALB via VPC Link |
+| SPA | Vite dev server | S3 + CloudFront |
+| Secrets | `docker-compose.yml` | Secrets Manager |
+| IaC / CI/CD | — | CDK (C#) / GitHub Actions + OIDC |
 
 ## Request path
 
 ```
-Browser
-   │
-   ▼
-CloudFront ──(default)──▶ S3 (SPA)
-   │ /events*, /orders*, /admin/*
-   ▼
-Amazon API Gateway (HTTP API, throttled)
-   │  VPC Link
-   ▼
-Internal ALB  ──▶ ECS Fargate: Catalog Service (2 tasks, round-robin)
-             ──▶ ECS Fargate: Order Service
-             ──▶ ECS Fargate: Inventory Service ◀── Catalog, Order, Worker (/inventory/*)
-
-ECS Fargate: Worker (no ingress) ◀── SQS ◀── SNS ◀── Order Service (outbox publisher)
-All tasks ──▶ RDS (Postgres); Catalog ──▶ ElastiCache (Redis)
+Browser → CloudFront ─(default)→ S3 (SPA)
+              │ /events*, /orders*, /admin/*
+              ▼
+         API Gateway (HTTP API) ─VPC Link→ internal ALB ─→ Catalog ×2, Order, Inventory
+Order ─→ SNS ─→ SQS ─→ Worker (no ingress)
+Catalog, Order, Worker ─→ ALB /inventory/* ─→ Inventory
 ```
 
-- **CloudFront** serves the SPA and forwards API paths (no caching) to API Gateway, so the browser only ever talks to one origin: no CORS, no API URL baked into the build. A CloudFront Function rewrites SPA routes to `/index.html` (not an error-page rule, which would also swallow API 404s).
-- **API Gateway** owns the public surface: explicit routes only, plus throttling. HTTP APIs do not support API keys, so the admin key is checked by the Catalog Service itself, the same way as locally.
-- **ALB** distributes traffic across task instances; Catalog runs 2 tasks. `/inventory/*` is reachable on the ALB but has no API Gateway route, so it stays internal.
-- **Worker** runs as an ECS service with no ingress. It only polls SQS.
+- CloudFront: one origin for the browser (no CORS). A CloudFront Function rewrites SPA routes to `/index.html`; don't use error-page rules (they would hide API 404s).
+- API Gateway: public routes + throttling. HTTP APIs have no API keys, so Catalog checks the admin key.
+- `/inventory/*` exists only on the ALB.
 
 ## Network
 
-| Item | Spec |
-|---|---|
-| VPC | 2 AZs, public + private subnets |
-| NAT | 1 NAT gateway (tasks pull images and reach SNS/SQS through it) |
-| ECS tasks | private subnets, no public IP |
-| RDS, ElastiCache | private subnets |
-| ALB | internal, private subnets |
-| VPC Link | into the private subnets, targets the ALB listener |
+- VPC: 2 AZs, public + private subnets, 1 NAT gateway.
+- Tasks, RDS, ElastiCache, ALB: private subnets, no public IPs.
 
-Security groups:
-
-| Group | Inbound from |
+| Security group | Inbound |
 |---|---|
-| `vpc-link-sg` | — (outbound to `alb-sg` on 80) |
-| `alb-sg` | `vpc-link-sg` and `tasks-sg` on 80 (tasks call Inventory through the ALB) |
+| `alb-sg` | `vpc-link-sg`, `tasks-sg` on 80 |
 | `tasks-sg` | `alb-sg` on 8080 |
 | `db-sg` | `tasks-sg` on 5432 |
 | `cache-sg` | `tasks-sg` on 6379 |
 
 ## Sizing
 
-Smallest sizes that run the demo; raise them only if something is actually slow.
-
 | Resource | Spec |
 |---|---|
-| Fargate tasks | 0.25 vCPU / 512 MB each, Linux x86_64 |
-| Desired count | Catalog 2, Inventory 1, Order 1, Worker 1 |
-| RDS | PostgreSQL 17, `db.t4g.micro`, 20 GB gp3, single-AZ, 1-day backups, deletion protection off |
-| ElastiCache | Redis 7, `cache.t4g.micro`, 1 node, no replicas |
-| SQS | as in [contracts.md](contracts.md#messages): visibility 30 s, `maxReceiveCount` 5, DLQ retention 14 days |
-| Logs | CloudWatch Logs, one group per service, 7-day retention |
+| Fargate | 0.25 vCPU / 512 MB; Catalog 2 tasks, others 1 |
+| RDS | PostgreSQL 17, `db.t4g.micro`, 20 GB gp3, single-AZ |
+| ElastiCache | Redis 7, `cache.t4g.micro`, 1 node |
+| SQS | per [contracts.md](contracts.md#messages); DLQ retention 14 days |
+| Logs | CloudWatch, 7 days |
 
-## Configuration on AWS
+## Configuration
 
-The keys are the ones in [contracts.md](contracts.md#configuration); this is where their AWS values come from.
+AWS values for the keys in [contracts.md](contracts.md#configuration):
 
-| Key | Source on AWS |
+| Key | Value |
 |---|---|
-| `ConnectionStrings__Catalog` / `__Inventory` / `__Orders` | `Host=<rds endpoint>;Database=<db>;Username=postgres` (no password) |
-| `PGPASSWORD` | ECS secret from the RDS-generated Secrets Manager secret (`password` field) |
-| `ConnectionStrings__Redis` | `<elasticache endpoint>:6379` |
-| `Services__InventoryUrl` | `http://<internal alb dns>` |
-| `Messaging__TopicArn` | SNS topic ARN |
-| `Messaging__PaymentQueueUrl`, `Messaging__NotificationQueueUrl` | SQS queue URLs |
-| `Admin__ApiKey` | ECS secret from a CDK-generated Secrets Manager secret |
-| `AWS_REGION` | the stack's region |
-| `AWS_ENDPOINT_URL`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | not set; the SDK uses the task role |
-| `Payment__FailureRate`, `Demo__*` | same defaults as local; change in the task definition to demo failures |
+| `ConnectionStrings__*` (DB) | `Host=<rds>;Database=<db>;Username=postgres` (no password) |
+| `PGPASSWORD` | ECS secret from the RDS secret |
+| `ConnectionStrings__Redis` | `<elasticache>:6379` |
+| `Services__InventoryUrl` | `http://<alb dns>` |
+| `Messaging__*` | topic ARN, queue URLs |
+| `Admin__ApiKey` | ECS secret (CDK-generated) |
+| `AWS_REGION` | stack region |
+| `AWS_ENDPOINT_URL`, access keys | unset (task role) |
 
 ## IAM
 
 | Role | Permissions |
 |---|---|
-| Order task role | `sns:Publish` on the topic |
-| Worker task role | `sqs:ReceiveMessage`, `sqs:DeleteMessage`, `sqs:ChangeMessageVisibility` on its two queues |
-| Catalog, Inventory task roles | none beyond the defaults |
-| Task execution role (all) | pull from ECR, write logs, read the two secrets |
-| GitHub deploy role | assumed via OIDC from this repo's `main` branch only; permission to assume the CDK bootstrap roles |
+| Order task | `sns:Publish` on the topic |
+| Worker task | `sqs:ReceiveMessage`, `DeleteMessage`, `ChangeMessageVisibility` on its queues |
+| Execution (all) | ECR pull, logs, read the two secrets |
+| GitHub deploy | OIDC, `main` only; assume CDK bootstrap roles |
 
 ## Routing
 
-API Gateway routes and ALB listener rules follow the [routing table](contracts.md#routing):
-
-| ALB priority | Path | Target group |
+| ALB priority | Path | Target |
 |---|---|---|
 | 1 | `/events/*/availability` | inventory |
 | 2 | `/inventory/*` | inventory |
 | 3 | `/events`, `/events/*`, `/admin/*` | catalog |
 | 4 | `/orders`, `/orders/*` | order |
-| default | — | fixed 404 |
+| default | — | 404 |
 
-Each target group health-checks `GET /health` on 8080.
-
-API Gateway (HTTP API) has exactly the seven public routes from contracts.md, each integrated with the ALB listener through the VPC Link. Default stage throttling: 50 requests/s, burst 100.
-
-CloudFront behaviors:
-
-| Path | Origin | Cache | Origin request policy |
-|---|---|---|---|
-| `/events*`, `/orders*`, `/admin/*` | API Gateway | disabled | `AllViewerExceptHostHeader` |
-| default (`*`) | S3 (Origin Access Control) | optimized | — (+ SPA rewrite function) |
+- Target groups health-check `/health` on 8080.
+- API Gateway: the seven public routes only; throttling 50 rps, burst 100.
+- CloudFront: API paths → API Gateway (no cache, `AllViewerExceptHostHeader`); default → S3 via OAC.
 
 ## CDK stacks
 
-One file per stack in `infra/cdk/SuperTickets.Cdk/`, so they can be built in parallel. Cross-stack values are passed as constructor props, not by name lookups.
+`infra/cdk/SuperTickets.Cdk/`, one file per stack, values passed as props.
 
 | Stack | Creates | Needs |
 |---|---|---|
 | `DataStack` | VPC, NAT, security groups, RDS + secret, ElastiCache | — |
-| `MessagingStack` | SNS topic, `payment-queue`, `notification-queue`, DLQs, raw-delivery subscriptions with `eventType` filters | — |
-| `ServicesStack` | ECS cluster, 4 Fargate services from the repo Dockerfiles, admin key secret, internal ALB, target groups, listener rules, IAM, log groups | Data, Messaging |
-| `ApiStack` | HTTP API, VPC Link, routes, throttling | Services (ALB listener) |
-| `WebStack` | private S3 bucket, CloudFront distribution + SPA rewrite function, `BucketDeployment` of `src/web/dist` with invalidation | Api (API domain) |
+| `MessagingStack` | Topic, queues, DLQs, filtered subscriptions | — |
+| `ServicesStack` | ECS cluster, 4 services, admin secret, ALB + rules, IAM, logs | Data, Messaging |
+| `ApiStack` | HTTP API, VPC Link, routes, throttling | Services |
+| `WebStack` | S3, CloudFront + function, `BucketDeployment` of `src/web/dist` | Api |
 
-Stack outputs: the CloudFront URL, the API Gateway URL, and the DLQ URLs.
+Outputs: CloudFront URL, API URL, DLQ URLs.
 
-## Deploying
+## Deploy
 
-One-time setup per account and region:
-1. `cdk bootstrap aws://<account>/<region>`.
-2. Create the GitHub OIDC provider and deploy role (by hand or with a small bootstrap stack; T17 decides and documents it here).
-3. Set the repo variables `AWS_ROLE_ARN` and `AWS_REGION`.
+One-time: `cdk bootstrap`; create the GitHub OIDC role (T17 documents how); set repo vars `AWS_ROLE_ARN`, `AWS_REGION`.
 
-Every deploy, from the pipeline or a laptop with credentials:
 ```
 cd src/web && npm ci && npm run build
 cd ../../infra/cdk && cdk deploy --all --require-approval never
 ```
 
-`FromAsset` builds and pushes the four images during `cdk deploy`, and `BucketDeployment` uploads the SPA and invalidates CloudFront, so there is no separate image or upload step.
-
-Tear down with `cdk destroy --all` when not in use. RDS, ElastiCache and the NAT gateway cost money while idle.
-
-## Deployment milestones
-
-The order things first work on AWS. [tasks.md](tasks.md) schedules the work behind them in parallel.
-
-1. `DataStack`: VPC, RDS (Postgres), ElastiCache (Redis).
-2. Catalog Service → ECS Fargate, backed by Redis cache.
-3. Inventory Service → ECS Fargate.
-4. Order Service → ECS Fargate + SNS topic.
-5. Payment/Notification Worker → ECS Fargate service (no ingress) + 2 SQS queues, each with a DLQ.
-6. Internal ALB in front of the services, Catalog on 2 tasks.
-7. API Gateway (HTTP API) with VPC Link to the ALB.
-8. React SPA → S3 + CloudFront, forwarding API paths to API Gateway.
-9. GitHub Actions pipeline for the .NET services and the SPA.
+CDK builds/pushes images and uploads the SPA with invalidation. Tear down with `cdk destroy --all` — RDS, ElastiCache and NAT cost money while idle.
 
 ## Definition of done
 
-Everything in [tech-plan.md's Definition of done](tech-plan.md#definition-of-done-application), checked through the CloudFront URL, plus:
+[tech-plan.md checks](tech-plan.md#definition-of-done) pass through the CloudFront URL, plus:
 
-- All public traffic goes through API Gateway; `/inventory/*` is not reachable from outside.
-- Requests are distributed across 2 Catalog tasks behind the ALB.
-- A merge to `main` deploys without manual steps.
+- Public traffic only via API Gateway; `/inventory/*` unreachable from outside.
+- Traffic spreads across 2 Catalog tasks.
+- Merge to `main` deploys with no manual step.
 
 ## Out of scope
 
-Multi-AZ RDS, autoscaling policies, WAF, Cognito/real auth, custom domain/ACM certificate, VPC endpoints instead of the NAT gateway, blue/green deployments.
+Multi-AZ RDS, autoscaling, WAF, real auth, custom domain, VPC endpoints, blue/green.

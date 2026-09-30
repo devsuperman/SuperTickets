@@ -1,47 +1,30 @@
 # Contracts
 
-The shared interfaces every task builds against: repo layout, HTTP APIs, messages, database schemas, configuration and ports. They are pinned down here so the tasks in [tasks.md](tasks.md) can run in parallel. A service can be built and tested against a stub of another service using only this file.
-
-Why these choices were made lives in [tech-plan.md](tech-plan.md); the business rules behind them live in [business-plan.md](business-plan.md). If you need to change a contract, change it here first, in the same PR as the code, and check every consumer listed next to it.
+Fixed interfaces every task builds against. To change one, edit this file in the same PR as the code and list the affected tasks.
 
 ## Repo layout
 
 ```
-SuperTickets.slnx
-global.json                      → pins the .NET 10 SDK
-Directory.Build.props            → net10.0, nullable, implicit usings, warnings as errors
-docker-compose.yml
+SuperTickets.slnx, global.json, Directory.Build.props, docker-compose.yml
 src/
-  SuperTickets.Shared/           → correlation ID, health checks, message contracts, outbox, SNS/SQS helpers
-  Catalog.Api/                   → Features/, Common/, Program.cs, Dockerfile
-  Inventory.Api/
-  Order.Api/
-  Order.Data/                    → OrderDbContext, entities, EF migrations for the Order database
-  Worker/                        → Payment + Notification BackgroundServices, Dockerfile
-  web/                           → React + Vite SPA
+  SuperTickets.Shared/     → correlation ID, health, message contracts, outbox, SNS/SQS helpers
+  Catalog.Api/  Inventory.Api/  Order.Api/   → Features/, Common/, Program.cs, Dockerfile
+  Order.Data/              → Order DbContext + migrations (Order.Api migrates; Worker never does)
+  Worker/                  → payment + notification handlers, Dockerfile
+  web/                     → React SPA
 infra/
-  localstack/init-aws.sh         → creates topic, queues, DLQs, subscriptions
-  cdk/SuperTickets.Cdk/          → CDK app (C#), one stack per file
-tests/
-  SuperTickets.Shared.Tests/
-  Catalog.Api.Tests/
-  Inventory.Api.Tests/
-  Order.Api.Tests/
-  Worker.Tests/
-scripts/
-  smoke.sh                       → end-to-end check against the local stack
+  localstack/init-aws.sh   → topic, queues, DLQs, subscriptions
+  cdk/SuperTickets.Cdk/    → one stack per file
+tests/                     → one xUnit project per src project
+scripts/smoke.sh           → end-to-end check
 .github/workflows/
 ```
 
-`Order.Data` is the one shared data project: the Order Service and the Worker both work on the Order database (the worker is the async half of the Order domain), so they share one `DbContext` and one set of migrations instead of two copies that can drift. `Order.Api` applies the migrations; the worker never does.
-
-## Public HTTP API
-
-Served through the Vite proxy locally and through CloudFront → API Gateway on AWS. Same relative paths in both.
+## Public API
 
 | Method | Path | Service | Success | Errors |
 |---|---|---|---|---|
-| GET | `/events?search={text}` | Catalog | 200 `EventDto[]` | — |
+| GET | `/events?search=` | Catalog | 200 `EventDto[]` | — |
 | GET | `/events/{id}` | Catalog | 200 `EventDto` | 404 |
 | GET | `/events/{id}/availability` | Inventory | 200 `AvailabilityDto` | 404 |
 | POST | `/orders` | Order | 202 `OrderDto` | 400, 404, 409, 503 |
@@ -51,42 +34,37 @@ Served through the Vite proxy locally and through CloudFront → API Gateway on 
 
 ### Conventions
 
-- JSON, camelCase, UTC timestamps in ISO 8601, ids are UUIDs.
-- Errors are RFC 9457 Problem Details (`Results.Problem` / `Results.ValidationProblem`). Validation errors use `errors: { field: [messages] }`. Business errors set `type` to one of the codes below so the SPA can branch on it.
-- Every response carries `X-Correlation-Id` (echoed from the request, or generated).
-- Catalog `GET` responses carry `X-Cache: HIT` or `X-Cache: MISS`.
-- `/admin/*` requires `X-Api-Key` equal to the Catalog's `Admin__ApiKey`; missing or wrong → 401.
+- JSON camelCase, UTC ISO 8601, UUID ids.
+- Errors: RFC 9457 Problem Details; validation errors in `errors: { field: [msg] }`; business errors set `type` (table below).
+- All responses: `X-Correlation-Id` (echoed or generated). Catalog GETs: `X-Cache: HIT|MISS`.
+- `/admin/*`: `X-Api-Key` must equal `Admin__ApiKey`, else 401.
+- `GET /events`: upcoming only, ordered by `startsAt`, max 100.
+- `POST /orders` with a known `Idempotency-Key` returns the existing order (202) and resumes it if unfinished.
 
-| Error `type` | Status | When |
+| `type` | Status | When |
 |---|---|---|
-| `sold_out` | 409 | Not enough tickets left to reserve the requested quantity |
-| `event_started` | 409 | Admin update on an event whose `startsAt` has passed |
-| `capacity_below_sold` | 409 | Admin sets `totalTickets` below tickets already reserved or sold |
-| `dependency_unavailable` | 503 | Inventory timed out, failed, or its circuit breaker is open |
+| `sold_out` | 409 | Not enough stock |
+| `event_started` | 409 | Update after `startsAt` |
+| `capacity_below_sold` | 409 | `totalTickets` below reserved/sold |
+| `dependency_unavailable` | 503 | Inventory timeout, error or open breaker |
 
 ### Payloads
 
 ```jsonc
 // EventDto
 { "id": "uuid", "name": "string", "venue": "string", "startsAt": "2026-12-01T20:00:00Z", "totalTickets": 500, "price": 49.90 }
-
-// POST /admin/events and PUT /admin/events/{id} body (PUT is a full replace)
-{ "name": "string", "venue": "string", "startsAt": "...", "totalTickets": 500, "price": 49.90 }
+// POST/PUT /admin/events body (PUT = full replace): EventDto without id
 
 // AvailabilityDto
 { "eventId": "uuid", "available": 42 }
 
-// POST /orders   header: Idempotency-Key: <client-generated string, 1..100 chars, required>
+// POST /orders — header Idempotency-Key (required, 1–100 chars)
 { "eventId": "uuid", "quantity": 2, "customerEmail": "a@b.com" }
 
 // OrderDto
-{
-  "id": "uuid", "eventId": "uuid", "quantity": 2, "customerEmail": "a@b.com",
-  "status": "pending | paid | cancelled",
-  "cancelReason": "sold_out | payment_failed | expired | null",
-  "createdAt": "...",
-  "tickets": [ { "id": "uuid", "number": 1, "status": "valid | used | cancelled" } ]
-}
+{ "id": "uuid", "eventId": "uuid", "quantity": 2, "customerEmail": "a@b.com",
+  "status": "pending|paid|cancelled", "cancelReason": "sold_out|payment_failed|expired|null",
+  "createdAt": "...", "tickets": [ { "id": "uuid", "number": 1, "status": "valid|used|cancelled" } ] }
 ```
 
 ### Validation
@@ -94,188 +72,138 @@ Served through the Vite proxy locally and through CloudFront → API Gateway on 
 | Field | Rule |
 |---|---|
 | `name`, `venue` | required, trimmed, 1–200 chars |
-| `startsAt` | in the future |
+| `startsAt` | future |
 | `totalTickets` | 1–100 000 |
-| `price` | 0.01–100 000, two decimals |
+| `price` | 0.01–100 000, 2 decimals |
 | `quantity` | 1–10 |
 | `customerEmail` | valid email, ≤ 254 chars |
-| `search` | optional, ≤ 100 chars, case-insensitive match on name or venue |
+| `search` | optional, ≤ 100 chars, case-insensitive on name/venue |
 
-`GET /events` returns only events with `startsAt` in the future, ordered by `startsAt`, at most 100.
+## Internal API (Inventory)
 
-A repeated `POST /orders` with the same `Idempotency-Key` returns the existing order (202, same body) and does no new work, except resuming an order that stopped half way (see [Order Service flow](#order-service-flow)).
-
-## Internal HTTP API (Inventory)
-
-Not routed by API Gateway. Called by Catalog, Order Service and Worker over the internal ALB (AWS) or the compose network (local). All calls are idempotent, so callers may retry.
+Internal network only. All idempotent.
 
 | Method | Path | Caller | Success | Errors |
 |---|---|---|---|---|
-| PUT | `/inventory/events/{eventId}` body `{ "totalTickets": 500 }` | Catalog (admin create/update) | 200 `{ eventId, totalTickets, available }` | 400, 409 `capacity_below_sold` |
-| POST | `/inventory/reservations` body `{ "orderId", "eventId", "quantity" }` | Order Service | 201 new, 200 already exists `{ orderId, eventId, quantity }` | 404 unknown event, 409 `sold_out` |
-| DELETE | `/inventory/reservations/{orderId}` | Worker (payment failed), Order Service (sweeper) | 204, also when missing or already released | — |
-
-`PUT /inventory/events/{eventId}` creates the stock row if missing. On update, `available` moves by the same delta as `totalTickets`.
+| PUT | `/inventory/events/{eventId}` `{ totalTickets }` | Catalog | 200 `{ eventId, totalTickets, available }` (upsert) | 400, 409 `capacity_below_sold` |
+| POST | `/inventory/reservations` `{ orderId, eventId, quantity }` | Order | 201 new / 200 existing | 404, 409 `sold_out` |
+| DELETE | `/inventory/reservations/{orderId}` | Order (sweeper), Worker | 204 (also if missing/released) | — |
 
 ## Messages
 
-One SNS topic, `supertickets-events`. Each message has:
+Topic `supertickets-events`. Body: JSON payload. Attributes: `eventType`, `correlationId`, `messageId` (outbox row id). Subscriptions: raw delivery + `eventType` filter. Records in `SuperTickets.Shared/Messaging/Contracts`.
 
-- body: the JSON payload below (camelCase)
-- message attributes: `eventType` (String, the record name), `correlationId` (String), `messageId` (String, UUID; the outbox row id)
-
-Subscriptions use raw message delivery and a filter policy on `eventType`, so each SQS message body is the payload and the attributes arrive as SQS message attributes.
-
-| Queue | Filter `eventType` | DLQ | Consumer |
+| Queue | Filter | DLQ | Consumer |
 |---|---|---|---|
-| `payment-queue` | `OrderCreated` | `payment-dlq` | Worker: payment handler |
-| `notification-queue` | `PaymentSucceeded` | `notification-dlq` | Worker: notification handler |
+| `payment-queue` | `OrderCreated` | `payment-dlq` | Worker payment handler |
+| `notification-queue` | `PaymentSucceeded` | `notification-dlq` | Worker notification handler |
 
-Both queues: visibility timeout 30 s, `maxReceiveCount` 5, long polling 20 s. `PaymentFailed` has no subscriber; it is published for observability and future consumers.
+Queues: visibility 30 s, `maxReceiveCount` 5, long poll 20 s. `PaymentFailed` has no subscriber (observability only).
 
 ```jsonc
-// OrderCreated
-{ "orderId": "uuid", "eventId": "uuid", "quantity": 2, "customerEmail": "a@b.com", "createdAt": "..." }
-// PaymentSucceeded
-{ "orderId": "uuid", "eventId": "uuid", "quantity": 2, "customerEmail": "a@b.com", "paidAt": "..." }
-// PaymentFailed
-{ "orderId": "uuid", "eventId": "uuid", "quantity": 2, "reason": "simulated_decline", "failedAt": "..." }
+OrderCreated     { "orderId", "eventId", "quantity", "customerEmail", "createdAt" }
+PaymentSucceeded { "orderId", "eventId", "quantity", "customerEmail", "paidAt" }
+PaymentFailed    { "orderId", "eventId", "quantity", "reason": "simulated_decline", "failedAt" }
 ```
-
-The records live in `SuperTickets.Shared/Messaging/Contracts`.
 
 ## Databases
 
-One PostgreSQL server, three databases: `catalog`, `inventory`, `orders`. Each service's EF Core migrations create its database and tables on startup (`Database.MigrateAsync()`), so there is no init script, locally or on RDS. Names are snake_case.
-
-### `catalog` (Catalog.Api)
+Databases `catalog`, `inventory`, `orders` on one server, created by each service's migrations on startup. snake_case.
 
 ```
-events(id uuid pk, name text, venue text, starts_at timestamptz, total_tickets int,
-       price numeric(10,2), created_at timestamptz, updated_at timestamptz)
+-- catalog
+events(id uuid pk, name, venue, starts_at timestamptz, total_tickets int, price numeric(10,2), created_at, updated_at)
+
+-- inventory
+stock(event_id uuid pk, total_tickets int, available int, check (0 <= available <= total_tickets))
+reservations(order_id uuid pk, event_id fk, quantity int, status 'active'|'released', created_at, released_at)
+
+-- orders (Order.Data)
+orders(id uuid pk, event_id, quantity, customer_email, status 'pending'|'paid'|'cancelled',
+       cancel_reason null, idempotency_key unique, created_at, updated_at)
+payments(order_id pk, succeeded bool, processed_at)
+tickets(id pk, order_id fk, number int, event_id, customer_email, status, created_at, unique(order_id, number))
+outbox(id pk, type, payload jsonb, correlation_id, created_at, published_at null)  -- partial index on unpublished
 ```
 
-### `inventory` (Inventory.Api)
+Inventory SQL (each in one transaction):
+- **Reserve:** `INSERT reservations ... ON CONFLICT DO NOTHING` (conflict → 200 existing); then `UPDATE stock SET available = available - @qty WHERE event_id = @id AND available >= @qty` (0 rows → rollback, 409).
+- **Release:** `UPDATE reservations SET status = 'released' WHERE order_id = @id AND status = 'active' RETURNING quantity`; add it back to `stock`.
+- **Set capacity:** `UPDATE stock SET available = available + (@new - total_tickets), total_tickets = @new WHERE event_id = @id AND @new >= total_tickets - available` (0 rows on existing → 409).
 
-```
-stock(event_id uuid pk, total_tickets int, available int,
-      check (available >= 0 and available <= total_tickets))
-reservations(order_id uuid pk, event_id uuid fk → stock, quantity int,
-             status text ('active' | 'released'), created_at, released_at null)
-```
-
-Reserve, in one transaction:
-1. `INSERT INTO reservations ... ON CONFLICT (order_id) DO NOTHING`. Nothing inserted → return the existing row (200).
-2. `UPDATE stock SET available = available - @qty WHERE event_id = @id AND available >= @qty RETURNING available`. No row → roll back, 409 `sold_out`.
-
-Release: `UPDATE reservations SET status = 'released' ... WHERE order_id = @id AND status = 'active' RETURNING event_id, quantity`, then add the quantity back to `stock`, same transaction.
-
-Set capacity: `UPDATE stock SET available = available + (@new - total_tickets), total_tickets = @new WHERE event_id = @id AND @new >= total_tickets - available`. No row updated on an existing event → 409 `capacity_below_sold`.
-
-### `orders` (Order.Data, used by Order.Api and Worker)
-
-```
-orders(id uuid pk, event_id uuid, quantity int, customer_email text,
-       status text ('pending' | 'paid' | 'cancelled'), cancel_reason text null,
-       idempotency_key text unique, created_at, updated_at)
-payments(order_id uuid pk, succeeded bool, processed_at)          → payment worker idempotency
-tickets(id uuid pk, order_id uuid fk, number int, event_id uuid, customer_email text,
-        status text ('valid' | 'used' | 'cancelled'), created_at,
-        unique (order_id, number))                                 → notification worker idempotency
-outbox(id uuid pk, type text, payload jsonb, correlation_id text,
-       created_at, published_at null)                              → index on created_at where published_at is null
-```
-
-Status changes are always conditional: `UPDATE orders SET status = ... WHERE id = @id AND status = 'pending'`. Whoever loses the race (worker vs. sweeper) sees 0 rows and does nothing.
+Order status updates always add `AND status = 'pending'`; 0 rows → do nothing.
 
 ## Flows
 
-### Order Service flow
+**`POST /orders`**
+1. Key exists and order is final, or `pending` with `OrderCreated` in outbox → return it.
+2. New key → insert `pending` (unique race → return winner).
+3. Reserve (timeout, retry, breaker).
+4. OK → insert `OrderCreated` outbox row → 202.
+5. 409 → `cancelled`/`sold_out` → 409.
+6. Failure → stay `pending` → 503. Same-key retry resumes at 3; otherwise the sweeper cleans up.
 
-`POST /orders`:
-1. Look up `idempotency_key`. Found and not `pending`, or `pending` with an `OrderCreated` outbox row → return it.
-2. Not found → insert the order as `pending` (a unique-key race returns the winner's order).
-3. Reserve in Inventory (timeout, retry, circuit breaker).
-4. Reserved → insert the `OrderCreated` outbox row → 202.
-5. 409 from Inventory → set `cancelled` / `sold_out` → 409.
-6. Timeout, error or open breaker → leave `pending` → 503. A client retry with the same key resumes at step 3; if the client never retries, the sweeper cancels the order and releases any reservation.
+**Sweeper** (Order.Api, every `Orders__SweepIntervalSeconds`): `pending` older than `Orders__PendingTimeoutMinutes` → release → `cancelled`/`expired`.
 
-Sweeper (`BackgroundService` in Order.Api, every `Orders__SweepIntervalSeconds`): for orders `pending` longer than `Orders__PendingTimeoutMinutes`, call Inventory release, then set `cancelled` / `expired`.
+**Outbox publisher** (Order.Api): unpublished rows `FOR UPDATE SKIP LOCKED` → SNS → set `published_at`. Covers Worker rows too.
 
-Outbox publisher (`BackgroundService` from Shared, hosted by Order.Api): reads unpublished rows with `FOR UPDATE SKIP LOCKED`, publishes to SNS, sets `published_at`. It publishes the worker's rows too, since they share the table.
+**Payment handler** (`OrderCreated`)
+1. In one transaction: reuse existing `payments` row, or roll `Payment__FailureRate`, insert it, update order (`paid` or `cancelled`/`payment_failed`), insert outbox event.
+2. If failed → release stock. A release error leaves the message for redelivery.
+3. Delete message.
 
-### Worker flow
+**Notification handler** (`PaymentSucceeded`): insert tickets `1..quantity` `ON CONFLICT DO NOTHING`, log confirmation, delete message.
 
-Payment handler (`OrderCreated`), one transaction:
-1. `payments` row for the order exists → reuse its result. Otherwise roll against `Payment__FailureRate`, insert the row, set the order `paid` or `cancelled` / `payment_failed` (conditional on `pending`), and insert `PaymentSucceeded` or `PaymentFailed` into the outbox.
-2. Commit. If the result is a failure, call Inventory release (idempotent). If release throws, the message is not deleted and the redelivery repeats only the release.
-3. Delete the SQS message.
+A throwing handler leaves the message; after 5 receives it goes to the DLQ.
 
-Notification handler (`PaymentSucceeded`): insert tickets `1..quantity` with `ON CONFLICT DO NOTHING`, log `Confirmation sent to {email} for order {orderId}: {n} tickets`, delete the message.
-
-A handler that throws leaves the message on the queue; after 5 receives it moves to the DLQ.
-
-## Caching (Catalog)
+## Cache (Catalog)
 
 | Key | Value | TTL |
 |---|---|---|
-| `catalog:event:{id}` | `EventDto` JSON | `Cache__TtlSeconds` ± 10 % jitter |
-| `catalog:v{version}:events:{search, lowercased, empty for none}` | `EventDto[]` JSON | same |
-| `catalog:version` | integer, `INCR` on every admin write | none |
+| `catalog:event:{id}` | `EventDto` | `Cache__TtlSeconds` ± 10 % |
+| `catalog:v{version}:events:{search lowercased}` | `EventDto[]` | same |
+| `catalog:version` | counter | none |
 
-Admin create/update deletes `catalog:event:{id}` and increments `catalog:version`, which orphans every cached list at once. Any Redis error is logged and the request goes to Postgres (`X-Cache: MISS`).
+Admin write: `DEL catalog:event:{id}` + `INCR catalog:version`. Redis error → log, read Postgres, `X-Cache: MISS`.
 
 ## Configuration
 
-Standard ASP.NET Core configuration: `appsettings.json` defaults, environment variables override (`Section__Key`). The same keys are set by `docker-compose.yml` locally and by the CDK task definitions on AWS.
+`appsettings.json` defaults, overridden by env vars. AWS values: [aws-publish.md](aws-publish.md#configuration).
 
-| Key | Used by | Local value / default |
+| Key | Used by | Local default |
 |---|---|---|
-| `ConnectionStrings__Catalog` | Catalog | `Host=postgres;Database=catalog;Username=postgres;Password=postgres` |
-| `ConnectionStrings__Inventory` | Inventory | `...;Database=inventory;...` |
-| `ConnectionStrings__Orders` | Order, Worker | `...;Database=orders;...` |
+| `ConnectionStrings__Catalog` / `__Inventory` / `__Orders` | Catalog / Inventory / Order + Worker | `Host=postgres;Database=<db>;Username=postgres;Password=postgres` |
 | `ConnectionStrings__Redis` | Catalog | `redis:6379` |
-| `PGPASSWORD` | all with a DB | unset locally (password is in the string); ECS secret on AWS |
+| `PGPASSWORD` | DB users | unset (Npgsql uses it when the string has no password) |
 | `Services__InventoryUrl` | Catalog, Order, Worker | `http://inventory-api:8080` |
-| `AWS_ENDPOINT_URL` | Order, Worker | `http://localstack:4566`; unset on AWS |
-| `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | Order, Worker | `us-east-1`, `test`, `test`; task role on AWS |
+| `AWS_ENDPOINT_URL` | Order, Worker | `http://localstack:4566` |
+| `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | Order, Worker | `us-east-1`, `test`, `test` |
 | `Messaging__TopicArn` | Order | `arn:aws:sns:us-east-1:000000000000:supertickets-events` |
-| `Messaging__PaymentQueueUrl` | Worker | `http://localstack:4566/000000000000/payment-queue` |
-| `Messaging__NotificationQueueUrl` | Worker | `http://localstack:4566/000000000000/notification-queue` |
+| `Messaging__PaymentQueueUrl` / `__NotificationQueueUrl` | Worker | `http://localstack:4566/000000000000/<queue>` |
 | `Admin__ApiKey` | Catalog | `dev-admin-key` |
 | `Cache__TtlSeconds` | Catalog | `60` |
-| `Orders__PendingTimeoutMinutes` | Order | `5` |
-| `Orders__SweepIntervalSeconds` | Order | `30` |
+| `Orders__PendingTimeoutMinutes` / `__SweepIntervalSeconds` | Order | `5` / `30` |
 | `Payment__FailureRate` | Worker | `0.1` |
-| `Demo__DelayMs`, `Demo__ErrorRate` | Inventory | `0`, `0` (on reserve only) |
-| `Demo__NotificationErrorRate` | Worker | `0` (throws in the notification handler → DLQ) |
-
-Npgsql reads `PGPASSWORD` when the connection string has no password, which is how the RDS secret gets in without environment-specific code.
+| `Demo__DelayMs`, `Demo__ErrorRate` | Inventory (reserve only) | `0`, `0` |
+| `Demo__NotificationErrorRate` | Worker | `0` |
 
 ## Ports
 
-Every .NET container listens on `8080` and serves `GET /health` (checks its DB; Catalog also reports Redis as degraded, not unhealthy).
+Containers listen on `8080` and serve `GET /health` (DB check; Redis reported as degraded, not unhealthy).
 
-| Compose service | Host port |
-|---|---|
-| `catalog-api` | 5101 |
-| `inventory-api` | 5102 |
-| `order-api` | 5103 |
-| `web` | 5173 |
-| `postgres` | 5432 |
-| `redis` | 6379 |
-| `localstack` | 4566 |
+| Service | `catalog-api` | `inventory-api` | `order-api` | `web` | `postgres` | `redis` | `localstack` |
+|---|---|---|---|---|---|---|---|
+| Host port | 5101 | 5102 | 5103 | 5173 | 5432 | 6379 | 4566 |
 
 ## Routing
 
-The same path rules appear three times; keep them in sync.
+Keep Vite proxy, ALB and API Gateway in sync.
 
-| Path | Target | Vite proxy (local) | ALB rule | API Gateway route |
+| Path | Target | Vite | ALB | API Gateway |
 |---|---|---|---|---|
-| `/events/{id}/availability` | Inventory | yes, listed first | yes, priority 1 | yes |
-| `/inventory/*` | Inventory | no | yes | **no** (internal only) |
-| `/events`, `/events/*` | Catalog | yes | yes | yes |
-| `/admin/*` | Catalog | yes | yes | yes |
+| `/events/{id}/availability` | Inventory | yes (first) | yes (first) | yes |
+| `/inventory/*` | Inventory | no | yes | no |
+| `/events`, `/events/*`, `/admin/*` | Catalog | yes | yes | yes |
 | `/orders`, `/orders/*` | Order | yes | yes | yes |
 
-SPA routes must not start with an API prefix, or a page reload would hit the API: use `/`, `/event/:id`, `/cart`, `/order/:id`, `/manage`, `/manage/new`, `/manage/:id`.
+SPA routes avoid API prefixes: `/`, `/event/:id`, `/cart`, `/order/:id`, `/manage`, `/manage/new`, `/manage/:id`.

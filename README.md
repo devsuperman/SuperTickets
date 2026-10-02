@@ -1,6 +1,6 @@
 # SuperTickets
 
-Minimal ticket-selling app for learning distributed-systems patterns: cache, message broker, load balancer, API gateway, microservices. Not a production marketplace.
+A study project about microservices and the related distributed-systems subjects: cache, message broker, load balancer, API gateway. It is a minimal ticket-selling app built to learn and practice these patterns, not a production marketplace.
 
 ## Docs
 

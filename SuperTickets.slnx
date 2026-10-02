@@ -1,0 +1,17 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SuperTickets.Shared/SuperTickets.Shared.csproj" />
+    <Project Path="src/Order.Data/Order.Data.csproj" />
+    <Project Path="src/Catalog.Api/Catalog.Api.csproj" />
+    <Project Path="src/Inventory.Api/Inventory.Api.csproj" />
+    <Project Path="src/Order.Api/Order.Api.csproj" />
+    <Project Path="src/Worker/Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SuperTickets.Shared.Tests/SuperTickets.Shared.Tests.csproj" />
+    <Project Path="tests/Catalog.Api.Tests/Catalog.Api.Tests.csproj" />
+    <Project Path="tests/Inventory.Api.Tests/Inventory.Api.Tests.csproj" />
+    <Project Path="tests/Order.Api.Tests/Order.Api.Tests.csproj" />
+    <Project Path="tests/Worker.Tests/Worker.Tests.csproj" />
+  </Folder>
+</Solution>

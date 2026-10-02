@@ -35,9 +35,10 @@ Stack: .NET 10 Minimal APIs (Vertical Slice Architecture), React + Vite + shadcn
 
 ## Run
 
-- **Local:** `docker compose up` (LocalStack for SNS/SQS, no AWS account). See [tech-plan.md](tech-plan.md#local-run).
+- **Local:** `docker compose up --build -d --wait` (LocalStack for SNS/SQS, no AWS account); the app is at http://localhost:5173. See [tech-plan.md](tech-plan.md#local-run). Verify with `scripts/smoke.sh [BASE_URL] [--no-toggles]` (`--no-toggles` skips the failure-toggle checks; about 3 min with them).
+- **Build and test:** `dotnet build` and `dotnet test` (Testcontainers needs Docker); SPA: `npm ci && npm run build` in `src/web`. More commands in [CLAUDE.md](CLAUDE.md#commands).
 - **AWS:** `cdk deploy --all` (ECS Fargate, RDS, ElastiCache, SNS/SQS, API Gateway + ALB, S3 + CloudFront). See [aws-publish.md](aws-publish.md).
 
 ## Status
 
-Planning done, no code yet. Start with T01 in [tasks.md](tasks.md).
+T01–T17 implemented; the local smoke test passes against Compose. The AWS Definition of done (T18) is pending: it needs an AWS account, the one-time OIDC setup in [aws-publish.md](aws-publish.md#deploy), and a deploy. See [tasks.md](tasks.md).

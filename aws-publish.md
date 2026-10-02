@@ -107,7 +107,14 @@ Outputs: CloudFront URL, API URL, DLQ URLs.
 
 ## Deploy
 
-One-time: `cdk bootstrap`; create the GitHub OIDC role (T17 documents how); set repo vars `AWS_ROLE_ARN`, `AWS_REGION`.
+One-time setup:
+
+1. `cdk bootstrap aws://<account>/<region>`.
+2. Create the IAM OIDC provider `token.actions.githubusercontent.com` (audience `sts.amazonaws.com`).
+3. Create an IAM role trusted by that provider with condition `token.actions.githubusercontent.com:sub` = `repo:<owner>/SuperTickets:ref:refs/heads/main` (and `:aud` = `sts.amazonaws.com`). Its only permission is `sts:AssumeRole` on the CDK bootstrap roles (`arn:aws:iam::<account>:role/cdk-*`).
+4. Set repo variables `AWS_ROLE_ARN` (that role) and `AWS_REGION`.
+
+`.github/workflows/deploy.yml` runs on every push to `main`: assume the role via OIDC, build the SPA, then run the commands below.
 
 ```
 cd src/web && npm ci && npm run build

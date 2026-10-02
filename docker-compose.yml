@@ -111,7 +111,17 @@ services:
       localstack: { condition: service_healthy }
       inventory-api: { condition: service_healthy }
 
-  # web: added by T04 (Vite dev server on 5173, proxies per contracts.md#routing)
+  web:
+    build: { context: src/web }
+    environment:
+      CATALOG_URL: http://catalog-api:8080
+      INVENTORY_URL: http://inventory-api:8080
+      ORDER_URL: http://order-api:8080
+    ports: ["5173:5173"]
+    depends_on:
+      catalog-api: { condition: service_healthy }
+      inventory-api: { condition: service_healthy }
+      order-api: { condition: service_healthy }
 
 volumes:
   pgdata:

@@ -1,0 +1,117 @@
+x-dotnet-health: &dotnet-health
+  test:
+    - CMD-SHELL
+    - >-
+      exec 3<>/dev/tcp/127.0.0.1/8080 &&
+      printf 'GET /health HTTP/1.0\r\n\r\n' >&3 &&
+      head -n1 <&3 | grep -q ' 200'
+  interval: 5s
+  timeout: 5s
+  retries: 20
+  start_period: 10s
+
+x-aws: &aws-env
+  AWS_ENDPOINT_URL: http://localstack:4566
+  AWS_REGION: us-east-1
+  AWS_ACCESS_KEY_ID: test
+  AWS_SECRET_ACCESS_KEY: test
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_PASSWORD: postgres
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  localstack:
+    image: localstack/localstack:3
+    environment:
+      SERVICES: sns,sqs
+      AWS_DEFAULT_REGION: us-east-1
+    ports: ["4566:4566"]
+    volumes:
+      - ./infra/localstack/init-aws.sh:/etc/localstack/init/ready.d/init-aws.sh:ro
+    healthcheck:
+      # healthy only after init-aws.sh has created the last queue
+      test: ["CMD-SHELL", "awslocal sqs get-queue-url --queue-name notification-queue"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+      start_period: 10s
+
+  inventory-api:
+    build: { context: ., dockerfile: src/Inventory.Api/Dockerfile }
+    environment:
+      ConnectionStrings__Inventory: Host=postgres;Database=inventory;Username=postgres;Password=postgres
+      Demo__DelayMs: "0"
+      Demo__ErrorRate: "0"
+    ports: ["5102:8080"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck: *dotnet-health
+
+  catalog-api:
+    build: { context: ., dockerfile: src/Catalog.Api/Dockerfile }
+    environment:
+      ConnectionStrings__Catalog: Host=postgres;Database=catalog;Username=postgres;Password=postgres
+      ConnectionStrings__Redis: redis:6379
+      Services__InventoryUrl: http://inventory-api:8080
+      Admin__ApiKey: dev-admin-key
+      Cache__TtlSeconds: "60"
+    ports: ["5101:8080"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      inventory-api: { condition: service_healthy }
+    healthcheck: *dotnet-health
+
+  order-api:
+    build: { context: ., dockerfile: src/Order.Api/Dockerfile }
+    environment:
+      <<: *aws-env
+      ConnectionStrings__Orders: Host=postgres;Database=orders;Username=postgres;Password=postgres
+      Services__InventoryUrl: http://inventory-api:8080
+      Messaging__TopicArn: arn:aws:sns:us-east-1:000000000000:supertickets-events
+      Orders__PendingTimeoutMinutes: "5"
+      Orders__SweepIntervalSeconds: "30"
+    ports: ["5103:8080"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      localstack: { condition: service_healthy }
+      inventory-api: { condition: service_healthy }
+    healthcheck: *dotnet-health
+
+  worker:
+    build: { context: ., dockerfile: src/Worker/Dockerfile }
+    environment:
+      <<: *aws-env
+      ConnectionStrings__Orders: Host=postgres;Database=orders;Username=postgres;Password=postgres
+      Services__InventoryUrl: http://inventory-api:8080
+      Messaging__PaymentQueueUrl: http://localstack:4566/000000000000/payment-queue
+      Messaging__NotificationQueueUrl: http://localstack:4566/000000000000/notification-queue
+      Payment__FailureRate: "0.1"
+      Demo__NotificationErrorRate: "0"
+    depends_on:
+      order-api: { condition: service_healthy }  # order-api runs the orders migrations
+      localstack: { condition: service_healthy }
+      inventory-api: { condition: service_healthy }
+
+  # web: added by T04 (Vite dev server on 5173, proxies per contracts.md#routing)
+
+volumes:
+  pgdata:

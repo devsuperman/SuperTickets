@@ -1,5 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <PackageReference Include="Testcontainers.PostgreSql" Version="4.*" />
+    <PackageReference Include="Testcontainers.LocalStack" Version="4.*" />
     <ProjectReference Include="../../src/Worker/Worker.csproj" />
   </ItemGroup>
 </Project>

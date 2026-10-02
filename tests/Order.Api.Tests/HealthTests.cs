@@ -1,12 +1,12 @@
-using Microsoft.AspNetCore.Mvc.Testing;
-
 namespace Order.Api.Tests;
 
-public class HealthTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>
+[Collection("infra")]
+public class HealthTests(Infra infra)
 {
     [Fact]
     public async Task Health_returns_200_and_correlation_id()
     {
+        await using var factory = new OrderFactory(infra);
         var client = factory.CreateClient();
         var request = new HttpRequestMessage(HttpMethod.Get, "/health");
         request.Headers.Add("X-Correlation-Id", "abc-123");

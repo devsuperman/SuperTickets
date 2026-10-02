@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.*" />
+    <PackageReference Include="Testcontainers.PostgreSql" Version="4.*" />
     <ProjectReference Include="../../src/Order.Api/Order.Api.csproj" />
   </ItemGroup>
 </Project>

@@ -1,4 +1,3 @@
-using Amazon.SQS;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Order.Data;
@@ -10,12 +9,12 @@ namespace Worker.Features.SendNotification;
 
 /// <summary>PaymentSucceeded → tickets 1..quantity (idempotent) and a logged confirmation.</summary>
 public sealed class NotificationConsumer(
-    IAmazonSQS sqs,
+    RabbitMq rabbit,
     IOptions<MessagingOptions> messaging,
     IServiceScopeFactory scopes,
     IOptions<DemoOptions> demo,
     ILogger<NotificationConsumer> logger)
-    : SqsConsumer<PaymentSucceeded>(sqs, messaging.Value.NotificationQueueUrl, logger)
+    : QueueConsumer<PaymentSucceeded>(rabbit, messaging.Value.NotificationQueue, logger)
 {
     protected override async Task HandleAsync(PaymentSucceeded m, CancellationToken ct)
     {

@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # End-to-end smoke test for the Definition of done (tech-plan.md).
 #   scripts/smoke.sh [BASE_URL] [--no-toggles]
-# BASE_URL defaults to http://localhost:5173 (SPA proxy); env BASE_URL also works.
+# BASE_URL defaults to http://localhost:8080 (nginx gateway); env BASE_URL also works.
 # --no-toggles skips the failure-toggle checks (they restart the Worker with
-# docker compose, so they are local only).
+# docker compose).
 # Env: ADMIN_API_KEY (default dev-admin-key), PAYMENT_RETRIES (default 6).
 set -u
 
-BASE_URL="${BASE_URL:-http://localhost:5173}"
+BASE_URL="${BASE_URL:-http://localhost:8080}"
 TOGGLES=1
 for a in "$@"; do
   case "$a" in
@@ -100,6 +100,12 @@ req GET "/events/$EID"; check "GET after update is X-Cache MISS" "$(hdr x-cache)
 req GET "/events/$EID"; check "then HIT again" "$(hdr x-cache)" HIT
 req GET "/events/$(uuid)"; check "unknown event returns 404" "$CODE" 404
 
+# 3b. Gateway: internal route is hidden, GETs are spread across the Catalog replicas
+req GET "/inventory/events/$EID"; check "/inventory/* is not exposed by the gateway" "$CODE" 404
+upstreams=""
+for _ in $(seq 1 10); do req GET "/events/$EID"; upstreams="$upstreams$(hdr x-upstream)\n"; done
+check "GETs are served by 2 Catalog replicas" "$(printf "$upstreams" | sort -u | grep -c .)" 2
+
 # 4. Order completes end to end (OrderCreated -> payment -> PaymentSucceeded -> notification -> tickets)
 PAID=""; QTY=2
 for i in $(seq 1 "${PAYMENT_RETRIES:-6}"); do
@@ -153,9 +159,8 @@ if [ "$TOGGLES" = 1 ]; then
     WORKER_TOGGLED=1; sleep 5
   }
   dlq_count() {
-    (cd "$ROOT" && docker compose exec -T localstack awslocal sqs get-queue-attributes \
-      --queue-url http://localhost:4566/000000000000/notification-dlq --attribute-names ApproximateNumberOfMessages) 2>/dev/null \
-      | jq -r '.Attributes.ApproximateNumberOfMessages // "0"'
+    curl -s -m 10 -u guest:guest "${RABBITMQ_API:-http://localhost:15672}/api/queues/%2F/notification-dlq" 2>/dev/null \
+      | jq -r '.messages // "0"'
   }
 
   create_event "$RUN payfail" 5 5.00; FID=$(printf '%s' "$BODY" | jq -r .id)
@@ -175,9 +180,9 @@ if [ "$TOGGLES" = 1 ]; then
   order "$RUN-nf" "$NID" 1; check "order accepted while notification is forced to fail" "$CODE" 202
   OID=$(printf '%s' "$BODY" | jq -r .id)
   wait_order "$OID" '.status=="paid"' 60 && ok "order paid despite notification failure" || bad "order paid despite notification failure" "$BODY"
-  echo "      (waiting for 5 receives x 30s visibility to reach notification-dlq, up to 240s)"
-  after=$before; end=$((SECONDS + 240))
-  while [ $SECONDS -lt $end ]; do after=$(dlq_count); [ "${after:-0}" -gt "${before:-0}" ] && break; sleep 10; done
+  echo "      (waiting for 5 deliveries to reach notification-dlq, up to 60s)"
+  after=$before; end=$((SECONDS + 60))
+  while [ $SECONDS -lt $end ]; do after=$(dlq_count); [ "${after:-0}" -gt "${before:-0}" ] && break; sleep 2; done
   [ "${after:-0}" -gt "${before:-0}" ] && ok "forced notification failure reaches the DLQ" || bad "forced notification failure reaches the DLQ" "before=$before after=$after"
 
   # restore the normal Worker (also done by the exit trap)

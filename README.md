@@ -9,7 +9,6 @@ Minimal ticket-selling app for learning distributed-systems patterns: cache, mes
 | [business-plan.md](business-plan.md) | Scope and business rules |
 | [tech-plan.md](tech-plan.md) | Architecture, resilience patterns, local run |
 | [contracts.md](contracts.md) | Routes, payloads, messages, schemas, config, ports |
-| [aws-publish.md](aws-publish.md) | AWS infrastructure and deploy |
 | [tasks.md](tasks.md) | Work breakdown, parallel waves |
 | [CLAUDE.md](CLAUDE.md) | Conventions for coding agents |
 
@@ -31,14 +30,13 @@ Admin creates an event → guest buys tickets (email only) → payment simulated
 | Order | Orders, outbox, pending-order expiry |
 | Worker | Payment simulation, ticket generation |
 
-Stack: .NET 10 Minimal APIs (Vertical Slice Architecture), React + Vite + shadcn/ui, PostgreSQL, Redis, SNS/SQS.
+Stack: .NET 10 Minimal APIs (Vertical Slice Architecture), React + Vite + shadcn/ui, PostgreSQL, Redis, RabbitMQ, nginx. Everything runs in Docker Compose; no cloud account needed.
 
 ## Run
 
-- **Local:** `docker compose up --build -d --wait` (LocalStack for SNS/SQS, no AWS account); the app is at http://localhost:5173. See [tech-plan.md](tech-plan.md#local-run). Verify with `scripts/smoke.sh [BASE_URL] [--no-toggles]` (`--no-toggles` skips the failure-toggle checks; about 3 min with them).
+- **Local:** `docker compose up --build -d --wait` (Postgres, Redis, RabbitMQ, nginx gateway); the app is at http://localhost:8080, RabbitMQ UI at http://localhost:15672 (guest/guest). See [tech-plan.md](tech-plan.md#local-run). Verify with `scripts/smoke.sh [BASE_URL] [--no-toggles]` (`--no-toggles` skips the failure-toggle checks; about 3 min with them).
 - **Build and test:** `dotnet build` and `dotnet test` (Testcontainers needs Docker); SPA: `npm ci && npm run build` in `src/web`. More commands in [CLAUDE.md](CLAUDE.md#commands).
-- **AWS:** `cdk deploy --all` (ECS Fargate, RDS, ElastiCache, SNS/SQS, API Gateway + ALB, S3 + CloudFront). See [aws-publish.md](aws-publish.md).
 
 ## Status
 
-T01–T17 implemented; the local smoke test passes against Compose. The AWS Definition of done (T18) is pending: it needs an AWS account, the one-time OIDC setup in [aws-publish.md](aws-publish.md#deploy), and a deploy. See [tasks.md](tasks.md).
+All tasks implemented. The latest change (T19: RabbitMQ + nginx replace SNS/SQS and AWS) has not yet been run against a live Compose stack: run `docker compose up --build -d --wait` and `scripts/smoke.sh`. See [tasks.md](tasks.md).

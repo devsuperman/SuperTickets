@@ -7,14 +7,13 @@ Fixed interfaces every task builds against. To change one, edit this file in the
 ```
 SuperTickets.slnx, global.json, Directory.Build.props, docker-compose.yml
 src/
-  SuperTickets.Shared/     → correlation ID, health, message contracts, outbox, SNS/SQS helpers
+  SuperTickets.Shared/     → correlation ID, health, message contracts, outbox, RabbitMQ helpers
   Catalog.Api/  Inventory.Api/  Order.Api/   → Features/, Common/, Program.cs, Dockerfile
   Order.Data/              → Order DbContext + migrations (Order.Api migrates; Worker never does)
   Worker/                  → payment + notification handlers, Dockerfile
   web/                     → React SPA (shadcn/ui)
 infra/
-  localstack/init-aws.sh   → topic, queues, DLQs, subscriptions
-  cdk/SuperTickets.Cdk/    → one stack per file
+  nginx/nginx.conf         → gateway: routing, rate limit, Catalog load balancing
 tests/                     → one xUnit project per src project
 scripts/smoke.sh           → end-to-end check
 .github/workflows/
@@ -91,14 +90,14 @@ Internal network only. All idempotent.
 
 ## Messages
 
-Topic `supertickets-events`. Body: JSON payload. Attributes: `eventType`, `correlationId`, `messageId` (outbox row id). Subscriptions: raw delivery + `eventType` filter. Records in `SuperTickets.Shared/Messaging/Contracts`.
+Topic exchange `supertickets-events`; routing key = event type. Body: JSON payload (persistent). Properties: `CorrelationId`, `MessageId` (outbox row id), header `eventType`. Records in `SuperTickets.Shared/Messaging/Contracts`. Services declare exchange, queues and bindings idempotently on startup (`RabbitMq.EnsureTopologyAsync`).
 
-| Queue | Filter | DLQ | Consumer |
+| Queue | Routing key | DLQ | Consumer |
 |---|---|---|---|
 | `payment-queue` | `OrderCreated` | `payment-dlq` | Worker payment handler |
 | `notification-queue` | `PaymentSucceeded` | `notification-dlq` | Worker notification handler |
 
-Queues: visibility 30 s, `maxReceiveCount` 5, long poll 20 s. `PaymentFailed` has no subscriber (observability only).
+Queues: durable quorum queues, manual ack, failed handler → nack + requeue, `x-delivery-limit` so a message is dead-lettered (default exchange, routing key = DLQ name) after 5 deliveries. Redelivery is immediate (consumers back off ~250 ms between polls). `PaymentFailed` has no subscriber (observability only; not routed to any queue).
 
 ```jsonc
 OrderCreated     { "orderId", "eventId", "quantity", "customerEmail", "createdAt" }
@@ -145,7 +144,7 @@ Order status updates always add `AND status = 'pending'`; 0 rows → do nothing.
 
 **Sweeper** (Order.Api, every `Orders__SweepIntervalSeconds`): `pending` older than `Orders__PendingTimeoutMinutes` → release → `cancelled`/`expired`.
 
-**Outbox publisher** (Order.Api): unpublished rows `FOR UPDATE SKIP LOCKED` → SNS → set `published_at`. Covers Worker rows too.
+**Outbox publisher** (Order.Api): unpublished rows `FOR UPDATE SKIP LOCKED` → exchange (routing key = event type) → set `published_at`. Covers Worker rows too.
 
 **Payment handler** (`OrderCreated`)
 1. In one transaction: reuse existing `payments` row, or roll `Payment__FailureRate`, insert it, update order (`paid` or `cancelled`/`payment_failed`), insert outbox event.
@@ -168,18 +167,15 @@ Admin write: `DEL catalog:event:{id}` + `INCR catalog:version`. Redis error → 
 
 ## Configuration
 
-`appsettings.json` defaults, overridden by env vars. AWS values: [aws-publish.md](aws-publish.md#configuration).
+`appsettings.json` defaults, overridden by env vars.
 
 | Key | Used by | Local default |
 |---|---|---|
 | `ConnectionStrings__Catalog` / `__Inventory` / `__Orders` | Catalog / Inventory / Order + Worker | `Host=postgres;Database=<db>;Username=postgres;Password=postgres` |
 | `ConnectionStrings__Redis` | Catalog | `redis:6379` |
-| `PGPASSWORD` | DB users | unset (Npgsql uses it when the string has no password) |
 | `Services__InventoryUrl` | Catalog, Order, Worker | `http://inventory-api:8080` |
-| `AWS_ENDPOINT_URL` | Order, Worker | `http://localstack:4566` |
-| `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | Order, Worker | `us-east-1`, `test`, `test` |
-| `Messaging__TopicArn` | Order | `arn:aws:sns:us-east-1:000000000000:supertickets-events` |
-| `Messaging__PaymentQueueUrl` / `__NotificationQueueUrl` | Worker | `http://localstack:4566/000000000000/<queue>` |
+| `Messaging__ConnectionString` | Order, Worker | `amqp://guest:guest@rabbitmq:5672` |
+| `Messaging__Exchange`, `__PaymentQueue`, `__NotificationQueue`, `__MaxDeliveries` | Order, Worker | `supertickets-events`, `payment-queue`, `notification-queue`, `5` (DLQ = queue name with `-queue` → `-dlq`) |
 | `Admin__ApiKey` | Catalog | `dev-admin-key` |
 | `Cache__TtlSeconds` | Catalog | `60` |
 | `Orders__PendingTimeoutMinutes` / `__SweepIntervalSeconds` | Order | `5` / `30` |
@@ -191,19 +187,22 @@ Admin write: `DEL catalog:event:{id}` + `INCR catalog:version`. Redis error → 
 
 Containers listen on `8080` and serve `GET /health` (DB check; Redis reported as degraded, not unhealthy).
 
-| Service | `catalog-api` | `inventory-api` | `order-api` | `web` | `postgres` | `redis` | `localstack` |
+| Service | `gateway` | `inventory-api` | `order-api` | `postgres` | `redis` | `rabbitmq` | `rabbitmq` UI |
 |---|---|---|---|---|---|---|---|
-| Host port | 5101 | 5102 | 5103 | 5173 | 5432 | 6379 | 4566 |
+| Host port | 8080 | 5102 | 5103 | 5432 | 6379 | 5672 | 15672 |
+
+`catalog-api` (2 replicas) and `web` have no host port; reach them through the gateway.
 
 ## Routing
 
-Keep Vite proxy, ALB and API Gateway in sync.
+The nginx gateway (`infra/nginx/nginx.conf`) owns routing; `src/web/vite.config.ts` only forwards API paths to it for `npm run dev`. Gateway rate limit: 50 rps per client, burst 100 (429 beyond). Response header `X-Upstream` shows which backend replied.
 
-| Path | Target | Vite | ALB | API Gateway |
-|---|---|---|---|---|
-| `/events/{id}/availability` | Inventory | yes (first) | yes (first) | yes |
-| `/inventory/*` | Inventory | no | yes | no |
-| `/events`, `/events/*`, `/admin/*` | Catalog | yes | yes | yes |
-| `/orders`, `/orders/*` | Order | yes | yes | yes |
+| Path | Target | Via gateway |
+|---|---|---|
+| `/events/{id}/availability` | Inventory | yes (matched first) |
+| `/inventory/*` | Inventory | no (404); internal network only |
+| `/events`, `/events/*`, `/admin/*` | Catalog (round-robin over replicas) | yes |
+| `/orders`, `/orders/*` | Order | yes |
+| anything else | SPA (`web`) | yes |
 
 SPA routes avoid API prefixes: `/`, `/event/:id`, `/cart`, `/order/:id`, `/manage`, `/manage/new`, `/manage/:id`.

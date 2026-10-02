@@ -1,4 +1,3 @@
-using Amazon.SQS;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Order.Data;
@@ -10,12 +9,12 @@ namespace Worker.Features.ProcessPayment;
 
 /// <summary>OrderCreated → simulated payment → paid or cancelled + outbox event; on failure release stock.</summary>
 public sealed class PaymentConsumer(
-    IAmazonSQS sqs,
+    RabbitMq rabbit,
     IOptions<MessagingOptions> messaging,
     IServiceScopeFactory scopes,
     IOptions<PaymentOptions> payment,
     ILogger<PaymentConsumer> logger)
-    : SqsConsumer<OrderCreated>(sqs, messaging.Value.PaymentQueueUrl, logger)
+    : QueueConsumer<OrderCreated>(rabbit, messaging.Value.PaymentQueue, logger)
 {
     protected override async Task HandleAsync(OrderCreated message, CancellationToken ct)
     {

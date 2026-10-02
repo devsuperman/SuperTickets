@@ -2,7 +2,7 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="10.*" />
     <PackageReference Include="Testcontainers.PostgreSql" Version="4.*" />
-    <PackageReference Include="Testcontainers.LocalStack" Version="4.*" />
+    <PackageReference Include="Testcontainers.RabbitMq" Version="4.*" />
     <ProjectReference Include="../../src/SuperTickets.Shared/SuperTickets.Shared.csproj" />
     <ProjectReference Include="../../src/Order.Data/Order.Data.csproj" />
   </ItemGroup>

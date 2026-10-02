@@ -1,10 +1,8 @@
+using System.Text;
 using System.Text.Json;
-using Amazon.SQS;
-using Amazon.SQS.Model;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using Order.Data;
 using SuperTickets.Shared.Messaging;
 using SuperTickets.Shared.Messaging.Contracts;
@@ -13,14 +11,13 @@ namespace SuperTickets.Shared.Tests;
 
 public sealed class MessagingTests(MessagingInfra infra) : IClassFixture<MessagingInfra>
 {
-    private OutboxPublisher<OrderDbContext> CreatePublisher()
+    private OutboxPublisher<OrderDbContext> CreatePublisher(RabbitMq rabbit)
     {
         var services = new ServiceCollection();
         services.AddScoped(_ => infra.CreateDb());
         return new OutboxPublisher<OrderDbContext>(
             services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(),
-            infra.Sns,
-            Options.Create(new MessagingOptions { TopicArn = infra.TopicArn }),
+            rabbit,
             NullLogger<OutboxPublisher<OrderDbContext>>.Instance);
     }
 
@@ -34,8 +31,8 @@ public sealed class MessagingTests(MessagingInfra infra) : IClassFixture<Messagi
         return row;
     }
 
-    private sealed class TestConsumer(IAmazonSQS sqs, string url, Func<OrderCreated, Task> handler)
-        : SqsConsumer<OrderCreated>(sqs, url, NullLogger.Instance)
+    private sealed class TestConsumer(RabbitMq rabbit, string queue, Func<OrderCreated, Task> handler)
+        : QueueConsumer<OrderCreated>(rabbit, queue, NullLogger.Instance)
     {
         public string? SeenCorrelationId { get; private set; }
 
@@ -49,15 +46,16 @@ public sealed class MessagingTests(MessagingInfra infra) : IClassFixture<Messagi
     [Fact]
     public async Task Outbox_row_reaches_queue_with_attributes_and_is_marked_published()
     {
-        var url = await infra.CreateQueueAsync("q-attrs", "OrderCreated");
+        await using var rabbit = infra.CreateBroker();
         var row = await AddOrderCreatedAsync("corr-123");
 
-        Assert.True(await CreatePublisher().PublishPendingAsync() >= 1);
+        Assert.True(await CreatePublisher(rabbit).PublishPendingAsync() >= 1);
 
-        var msg = await ReceiveOneAsync(url);
-        Assert.Equal("OrderCreated", msg.MessageAttributes["eventType"].StringValue);
-        Assert.Equal("corr-123", msg.MessageAttributes["correlationId"].StringValue);
-        Assert.Equal(row.Id.ToString(), msg.MessageAttributes["messageId"].StringValue);
+        var msg = await MessagingInfra.GetAsync(rabbit, rabbit.Options.PaymentQueue);
+        Assert.NotNull(msg);
+        Assert.Equal("OrderCreated", Encoding.UTF8.GetString((byte[])msg.BasicProperties.Headers!["eventType"]!));
+        Assert.Equal("corr-123", msg.BasicProperties.CorrelationId);
+        Assert.Equal(row.Id.ToString(), msg.BasicProperties.MessageId);
         using var doc = JsonDocument.Parse(msg.Body);
         Assert.Equal(2, doc.RootElement.GetProperty("quantity").GetInt32());
         Assert.Equal("a@b.com", doc.RootElement.GetProperty("customerEmail").GetString());
@@ -67,48 +65,34 @@ public sealed class MessagingTests(MessagingInfra infra) : IClassFixture<Messagi
     }
 
     [Fact]
-    public async Task Filter_keeps_other_event_types_out_of_the_queue()
+    public async Task Routing_keeps_other_event_types_out_of_the_queue()
     {
-        var url = await infra.CreateQueueAsync("q-filter", "PaymentSucceeded");
+        await using var rabbit = infra.CreateBroker();
         await AddOrderCreatedAsync("c");
-        await CreatePublisher().PublishPendingAsync();
+        await CreatePublisher(rabbit).PublishPendingAsync();
 
-        var r = await infra.Sqs.ReceiveMessageAsync(new ReceiveMessageRequest { QueueUrl = url, WaitTimeSeconds = 2 });
-        Assert.Empty(r.Messages ?? []);
+        // OrderCreated is bound to the payment queue only.
+        Assert.NotNull(await MessagingInfra.GetAsync(rabbit, rabbit.Options.PaymentQueue));
+        Assert.Null(await MessagingInfra.GetAsync(rabbit, rabbit.Options.NotificationQueue, timeoutMs: 1000));
     }
 
     [Fact]
-    public async Task Failed_handler_leaves_message_and_success_deletes_it()
+    public async Task Failed_handler_leaves_message_and_success_acks_it()
     {
-        var url = await infra.CreateQueueAsync("q-consumer", "OrderCreated");
+        await using var rabbit = infra.CreateBroker();
+        var queue = rabbit.Options.PaymentQueue;
         await AddOrderCreatedAsync("corr-xyz");
-        await CreatePublisher().PublishPendingAsync();
+        await CreatePublisher(rabbit).PublishPendingAsync();
 
-        var failing = new TestConsumer(infra.Sqs, url, _ => throw new InvalidOperationException("boom")) { WaitTimeSeconds = 5 };
+        var failing = new TestConsumer(rabbit, queue, _ => throw new InvalidOperationException("boom"));
         Assert.Equal(0, await failing.ReceiveOnceAsync());
         Assert.Equal("corr-xyz", failing.SeenCorrelationId);
 
-        // visibility timeout is 1 s: the message comes back, still not deleted
-        await Task.Delay(1500);
-        var ok = new TestConsumer(infra.Sqs, url, _ => Task.CompletedTask) { WaitTimeSeconds = 5 };
+        // the failed message was requeued, not lost
+        var ok = new TestConsumer(rabbit, queue, _ => Task.CompletedTask);
         Assert.Equal(1, await ok.ReceiveOnceAsync());
 
-        await Task.Delay(1500);
-        var again = await infra.Sqs.ReceiveMessageAsync(new ReceiveMessageRequest { QueueUrl = url, WaitTimeSeconds = 1 });
-        Assert.Empty(again.Messages ?? []);
-    }
-
-    private async Task<Message> ReceiveOneAsync(string url)
-    {
-        for (var i = 0; i < 5; i++)
-        {
-            var r = await infra.Sqs.ReceiveMessageAsync(new ReceiveMessageRequest
-            {
-                QueueUrl = url, WaitTimeSeconds = 3, MessageAttributeNames = ["All"],
-            });
-            if (r.Messages is { Count: > 0 }) return r.Messages[0];
-        }
-
-        throw new Xunit.Sdk.XunitException("No message received");
+        Assert.Equal(0, await ok.ReceiveOnceAsync());
+        Assert.Null(await MessagingInfra.GetAsync(rabbit, queue, timeoutMs: 500));
     }
 }

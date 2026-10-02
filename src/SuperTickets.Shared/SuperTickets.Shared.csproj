@@ -2,7 +2,6 @@
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.*" />
-    <PackageReference Include="AWSSDK.SimpleNotificationService" Version="4.*" />
-    <PackageReference Include="AWSSDK.SQS" Version="4.*" />
+    <PackageReference Include="RabbitMQ.Client" Version="7.*" />
   </ItemGroup>
 </Project>

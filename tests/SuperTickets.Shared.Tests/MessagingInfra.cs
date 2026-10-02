@@ -1,63 +1,51 @@
-using Amazon;
-using Amazon.Runtime;
-using Amazon.SimpleNotificationService;
-using Amazon.SimpleNotificationService.Model;
-using Amazon.SQS;
-using Amazon.SQS.Model;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Order.Data;
-using Testcontainers.LocalStack;
+using RabbitMQ.Client;
+using SuperTickets.Shared.Messaging;
 using Testcontainers.PostgreSql;
+using Testcontainers.RabbitMq;
 
 namespace SuperTickets.Shared.Tests;
 
-/// <summary>Real Postgres + LocalStack (SNS/SQS) via Testcontainers, shared by the messaging tests.</summary>
+/// <summary>Real Postgres + RabbitMQ via Testcontainers, shared by the messaging tests.</summary>
 public sealed class MessagingInfra : IAsyncLifetime
 {
     private readonly PostgreSqlContainer _pg = new PostgreSqlBuilder("postgres:16-alpine").Build();
-    private readonly LocalStackContainer _ls = new LocalStackBuilder("localstack/localstack:3.8").Build();
-
-    public IAmazonSimpleNotificationService Sns { get; private set; } = null!;
-    public IAmazonSQS Sqs { get; private set; } = null!;
-    public string TopicArn { get; private set; } = "";
-    public string PaymentQueueUrl { get; private set; } = "";
+    private readonly RabbitMqContainer _mq = new RabbitMqBuilder("rabbitmq:4-alpine").Build();
 
     public async Task InitializeAsync()
     {
-        await Task.WhenAll(_pg.StartAsync(), _ls.StartAsync());
-        var creds = new BasicAWSCredentials("test", "test");
-        var endpoint = _ls.GetConnectionString();
-        Sns = new AmazonSimpleNotificationServiceClient(creds, new AmazonSimpleNotificationServiceConfig { ServiceURL = endpoint, AuthenticationRegion = "us-east-1" });
-        Sqs = new AmazonSQSClient(creds, new AmazonSQSConfig { ServiceURL = endpoint, AuthenticationRegion = "us-east-1" });
-
-        TopicArn = (await Sns.CreateTopicAsync("supertickets-events")).TopicArn;
-        PaymentQueueUrl = await CreateQueueAsync("payment-queue", "OrderCreated");
-
+        await Task.WhenAll(_pg.StartAsync(), _mq.StartAsync());
         await using var db = CreateDb();
         await db.Database.MigrateAsync();
     }
 
-    /// <summary>Queue with visibility 1 s, subscribed raw with an eventType filter (mirrors init-aws.sh).</summary>
-    public async Task<string> CreateQueueAsync(string name, string eventType)
+    /// <summary>A broker handle with its own exchange and queues, so tests don't see each other's messages.</summary>
+    public RabbitMq CreateBroker()
     {
-        var url = (await Sqs.CreateQueueAsync(new CreateQueueRequest
+        var id = Guid.NewGuid().ToString("N")[..8];
+        return new RabbitMq(Options.Create(new MessagingOptions
         {
-            QueueName = name,
-            Attributes = new() { ["VisibilityTimeout"] = "1" },
-        })).QueueUrl;
-        var arn = (await Sqs.GetQueueAttributesAsync(url, ["QueueArn"])).Attributes["QueueArn"];
-        await Sns.SubscribeAsync(new SubscribeRequest
+            ConnectionString = _mq.GetConnectionString(),
+            Exchange = $"events-{id}",
+            PaymentQueue = $"payment-{id}-queue",
+            NotificationQueue = $"notification-{id}-queue",
+        }));
+    }
+
+    /// <summary>Polls a queue until a message arrives (auto-acked) or the timeout passes.</summary>
+    public static async Task<BasicGetResult?> GetAsync(RabbitMq rabbit, string queue, int timeoutMs = 5000)
+    {
+        await using var channel = await rabbit.CreateChannelAsync();
+        for (var waited = 0; waited <= timeoutMs; waited += 100)
         {
-            TopicArn = TopicArn,
-            Protocol = "sqs",
-            Endpoint = arn,
-            Attributes = new()
-            {
-                ["RawMessageDelivery"] = "true",
-                ["FilterPolicy"] = $$"""{"eventType":["{{eventType}}"]}""",
-            },
-        });
-        return url;
+            var result = await channel.BasicGetAsync(queue, autoAck: true);
+            if (result is not null) return result;
+            await Task.Delay(100);
+        }
+
+        return null;
     }
 
     public OrderDbContext CreateDb() =>
@@ -66,6 +54,6 @@ public sealed class MessagingInfra : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _pg.DisposeAsync();
-        await _ls.DisposeAsync();
+        await _mq.DisposeAsync();
     }
 }

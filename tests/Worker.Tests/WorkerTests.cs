@@ -109,11 +109,12 @@ public sealed class WorkerTests(WorkerInfra infra) : IClassFixture<WorkerInfra>
         var id = await h.SeedOrderAsync(OrderStatus.Paid);
         await h.SendAsync(h.NotificationQueue, new { orderId = id, eventId = Guid.NewGuid(), quantity = 2, customerEmail = "a@b.com", paidAt = DateTimeOffset.UtcNow });
 
-        // Every receive fails (handler throws); after 5 receives the broker moves the message to the DLQ.
+        // Every delivery fails (handler throws); after 5 deliveries the broker moves the message to the DLQ.
         var inDlq = 0;
         for (var i = 0; i < 20 && inDlq == 0; i++)
         {
             Assert.Equal(0, await h.Notification.ReceiveOnceAsync());
+            await Task.Delay(200); // dead-lettering is asynchronous
             inDlq = await h.CountAsync(h.NotificationDlq);
         }
 

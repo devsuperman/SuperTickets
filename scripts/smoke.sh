@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# End-to-end smoke test for the Definition of done (tech-plan.md).
+# End-to-end smoke test for the Definition of done (docs/project/tech-plan.md).
 #   scripts/smoke.sh [BASE_URL] [--no-toggles]
 # BASE_URL defaults to http://localhost:8080 (nginx gateway); env BASE_URL also works.
 # --no-toggles skips the failure-toggle checks (they restart the Worker with

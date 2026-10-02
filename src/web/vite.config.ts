@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
 // Only for `npm run dev` outside Compose: API paths go to the nginx gateway, which owns the routing
-// (contracts.md#routing). In Compose the browser talks to the gateway directly.
+// (docs/project/contracts.md#routing). In Compose the browser talks to the gateway directly.
 const api = { target: process.env.API_URL ?? 'http://localhost:8080', changeOrigin: true }
 
 export default defineConfig({

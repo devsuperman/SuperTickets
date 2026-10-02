@@ -1,4 +1,4 @@
-// DTOs mirror contracts.md#payloads.
+// DTOs mirror docs/project/contracts.md#payloads.
 export interface EventDto {
   id: string
   name: string

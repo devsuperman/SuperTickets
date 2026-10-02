@@ -1,6 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.*" />
+    <PackageReference Include="Testcontainers.PostgreSql" Version="4.*" />
+    <PackageReference Include="Testcontainers.Redis" Version="4.*" />
     <ProjectReference Include="../../src/Catalog.Api/Catalog.Api.csproj" />
   </ItemGroup>
 </Project>

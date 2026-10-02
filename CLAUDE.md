@@ -21,12 +21,12 @@ scripts/smoke.sh [BASE_URL] [--no-toggles]     # e2e Definition of done (default
 
 | Doc | Read before touching |
 |---|---|
-| [business-plan.md](business-plan.md) | Rules, scope |
-| [tech-plan.md](tech-plan.md) | Architecture, resilience, local run |
-| [contracts.md](contracts.md) | Routes, payloads, messages, schemas, config, ports |
-| [tasks.md](tasks.md) | Task scope, ownership, dependencies |
+| [business-plan.md](docs/project/business-plan.md) | Rules, scope |
+| [tech-plan.md](docs/project/tech-plan.md) | Architecture, resilience, local run |
+| [contracts.md](docs/project/contracts.md) | Routes, payloads, messages, schemas, config, ports |
+| [tasks.md](docs/project/tasks.md) | Task scope, ownership, dependencies |
 
-When a decision changes, update its doc in the same PR and keep README.md's summary in sync. Don't restate doc content here.
+When a decision changes, update its doc in the same PR and keep README.md's summary in sync. If the change affects a concept explained in [docs/learn](docs/learn/README.md), update that guide too. Don't restate doc content here.
 
 ## Conventions
 

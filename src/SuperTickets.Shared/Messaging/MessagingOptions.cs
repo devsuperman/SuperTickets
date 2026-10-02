@@ -1,6 +1,6 @@
 namespace SuperTickets.Shared.Messaging;
 
-/// <summary>Bound from the <c>Messaging</c> configuration section. Names default to the contract in contracts.md.</summary>
+/// <summary>Bound from the <c>Messaging</c> configuration section. Names default to the contract in docs/project/contracts.md.</summary>
 public sealed class MessagingOptions
 {
     public const string Section = "Messaging";

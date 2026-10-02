@@ -55,8 +55,8 @@ Critical path: T01 → T03 → T08 → T16 → T18. Prioritize T01 and T03.
 
 ### T04 — SPA scaffold
 - **Needs:** T01
-- **Do:** Vite + React + TS, router, react-query. Vite proxy per [routing](contracts.md#routing). `src/api/`: DTO types, `fetchJson` with typed Problem Details, one function per route. Empty pages for all SPA routes. Dev Dockerfile + `web` compose entry.
-- **Owns:** `src/web/` (shell, `src/api/`), `web` compose block.
+- **Do:** Vite + React + TS, router, react-query. Tailwind + `shadcn init`; add the base components (button, input, card, table, form, badge, sonner) per [tech-plan](tech-plan.md#react-app-shadcnui). Vite proxy per [routing](contracts.md#routing). `src/api/`: DTO types, `fetchJson` with typed Problem Details, one function per route. Empty pages for all SPA routes. Dev Dockerfile + `web` compose entry.
+- **Owns:** `src/web/` (shell, `src/api/`, `src/components/ui/`), `web` compose block. Later tasks add shadcn components with the CLI only.
 - **Done:** `npm run build`/`lint` pass; shell served on 5173.
 
 ### T05 — Catalog
@@ -91,13 +91,13 @@ Critical path: T01 → T03 → T08 → T16 → T18. Prioritize T01 and T03.
 
 ### T10 — SPA customer pages
 - **Needs:** T04
-- **Do:** `/` list + search; `/event/:id` details, availability, quantity (1–10); `/cart` in `localStorage`, email, order with one `Idempotency-Key` per checkout; `/order/:id` polls every 2 s, shows tickets or cancel reason; messages for `sold_out`, `dependency_unavailable`.
+- **Do:** `/` list + search; `/event/:id` details, availability, quantity (1–10); `/cart` in `localStorage`, email, order with one `Idempotency-Key` per checkout; `/order/:id` polls every 2 s, shows tickets or cancel reason; messages for `sold_out`, `dependency_unavailable`. shadcn/ui components only.
 - **Owns:** `src/web/src/pages/customer/`, `src/web/src/cart/`.
 - **Done:** build passes; purchase works against Compose.
 
 ### T11 — SPA admin pages
 - **Needs:** T04
-- **Do:** `/manage` list + API key in `sessionStorage` (sent as `X-Api-Key`); `/manage/new`, `/manage/:id` shared form with client validation, field errors, `event_started`/`capacity_below_sold` messages.
+- **Do:** `/manage` list + API key in `sessionStorage` (sent as `X-Api-Key`); `/manage/new`, `/manage/:id` shared form with client validation, field errors, `event_started`/`capacity_below_sold` messages. shadcn `Form` + zod.
 - **Owns:** `src/web/src/pages/admin/`.
 - **Done:** build passes; create/edit works against Compose.
 

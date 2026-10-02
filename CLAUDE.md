@@ -19,8 +19,9 @@ When a decision changes, update its doc in the same PR and keep README.md's summ
 ## Conventions
 
 - **Tasks:** one task per branch/PR; change only the paths it owns; stub other services from contracts.md.
-- **Vertical slices:** one project per service, one folder per feature under `Features/`. Features use Postgres/Redis directly. Events go through the outbox, never direct SNS publishes. Interfaces only when a feature needs one. Shared projects: `SuperTickets.Shared` and `Order.Data` only.
-- **Fixed stack:** .NET 10 Minimal APIs, React + Vite, PostgreSQL, Redis, SNS/SQS, AWS via CDK in C#.
+- **.NET: Vertical Slice Architecture:** one project per service, one folder per feature under `Features/`. Features use Postgres/Redis directly. Events go through the outbox, never direct SNS publishes. Interfaces only when a feature needs one. Shared projects: `SuperTickets.Shared` and `Order.Data` only.
+- **React: shadcn/ui only** for components (Tailwind for styling); add components with the shadcn CLI. Rules in tech-plan.md.
+- **Fixed stack:** .NET 10 Minimal APIs, React + Vite + shadcn/ui, PostgreSQL, Redis, SNS/SQS, AWS via CDK in C#.
 - **One codebase, two environments:** Compose locally, CDK on AWS; only config differs. No environment-specific code paths. AWS details stay in aws-publish.md.
 - **Resilience:** only the patterns listed in tech-plan.md.
 - **Smallest thing** that satisfies business-plan.md.

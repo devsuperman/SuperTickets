@@ -31,7 +31,7 @@ Admin creates an event → guest buys tickets (email only) → payment simulated
 | Order | Orders, outbox, pending-order expiry |
 | Worker | Payment simulation, ticket generation |
 
-Stack: .NET 10 Minimal APIs, React + Vite, PostgreSQL, Redis, SNS/SQS.
+Stack: .NET 10 Minimal APIs (Vertical Slice Architecture), React + Vite + shadcn/ui, PostgreSQL, Redis, SNS/SQS.
 
 ## Run
 

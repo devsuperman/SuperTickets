@@ -11,7 +11,7 @@ src/
   Catalog.Api/  Inventory.Api/  Order.Api/   → Features/, Common/, Program.cs, Dockerfile
   Order.Data/              → Order DbContext + migrations (Order.Api migrates; Worker never does)
   Worker/                  → payment + notification handlers, Dockerfile
-  web/                     → React SPA
+  web/                     → React SPA (shadcn/ui)
 infra/
   localstack/init-aws.sh   → topic, queues, DLQs, subscriptions
   cdk/SuperTickets.Cdk/    → one stack per file

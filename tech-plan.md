@@ -6,11 +6,11 @@ Application design for [business-plan.md](business-plan.md). Exact routes, schem
 
 | Concern | Choice |
 |---|---|
-| Services | ASP.NET Core Minimal APIs, .NET 10 (`net10.0`) |
+| Services | ASP.NET Core Minimal APIs, .NET 10 (`net10.0`), Vertical Slice Architecture |
 | Workers | `BackgroundService` |
 | Data | EF Core + Npgsql, migrations on startup; raw SQL for reserve/release |
 | HTTP resilience | `Microsoft.Extensions.Http.Resilience` (Polly v8) |
-| Frontend | React + Vite + TypeScript, `react-router`, `@tanstack/react-query` |
+| Frontend | React + Vite + TypeScript, shadcn/ui (Tailwind CSS), `react-router`, `@tanstack/react-query` |
 | Database | PostgreSQL, one database per service |
 | Cache | Redis (`StackExchange.Redis`) |
 | Broker | SNS/SQS API via SDK: one topic, one queue per consumer |
@@ -39,7 +39,15 @@ Step-by-step logic per handler: [contracts.md › Flows](contracts.md#flows).
 
 ## Code structure
 
-Vertical slices: one project per service, one folder per feature (endpoint + handler + validator). Features use the DB, cache and broker directly. Add an interface only when a feature needs to swap it.
+### .NET APIs: Vertical Slice Architecture
+
+Organize by feature, not by layer: no Controllers/Services/Repositories folders.
+
+- One project per service, one folder per feature under `Features/`.
+- A feature folder holds its endpoint, handler, request/response types and validator.
+- Endpoints call their handler directly (no mediator). Handlers use the DbContext, Redis and broker directly (no repositories).
+- Features don't call each other; shared code goes in `Common/`.
+- Add an interface only when a feature needs to swap the dependency.
 
 ```
 Order.Api/
@@ -51,6 +59,20 @@ Order.Api/
 Only two shared projects:
 - `SuperTickets.Shared`: correlation ID, health checks, message contracts, outbox, topic/queue helpers.
 - `Order.Data`: Order DB context and migrations, used by Order.Api (runs migrations) and Worker.
+
+### React app: shadcn/ui
+
+- UI built only from shadcn/ui components, added with the shadcn CLI into `src/components/ui/`; no other component library.
+- Styling with Tailwind CSS utility classes and the shadcn theme variables; no custom CSS files beyond the theme.
+- Forms: shadcn `Form` (react-hook-form + zod). Feedback: shadcn `Sonner` toasts.
+
+```
+web/src/
+  api/              → DTO types, fetch functions
+  components/ui/    → shadcn components (generated, edit sparingly)
+  pages/customer/   pages/admin/
+  cart/             → localStorage cart
+```
 
 ## Resilience patterns
 

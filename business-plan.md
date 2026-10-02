@@ -1,78 +1,63 @@
 # Business Plan
 
-## Goal
+Smallest realistic ticket-selling flow. Architecture lives in [tech-plan.md](tech-plan.md).
 
-Model the smallest realistic ticket-selling flow: an admin creates an event, a customer browses and buys tickets, payment is simulated, and a ticket confirmation is generated. Business rules and scope live here; architecture and stack choices live in [tech-plan.md](tech-plan.md).
+## Scope
 
-## Scope reduction
+1. Admin creates an event.
+2. Customer lists events and buys tickets.
+3. Payment is simulated.
+4. A successful order triggers async processing.
+5. Tickets are generated and a confirmation is sent.
 
-Keep the MVP focused on a single business flow:
+## Rules
 
-- Admin creates a simple event
-- Customer views available events
-- Customer buys tickets
-- Payment is simulated
-- Order success triggers async processing
-- Ticket confirmation is generated
+### Events
 
-## Business rules
+1. An event has name, date, venue, total tickets and price.
+2. Name, venue and price must be valid; date must be in the future; total tickets > 0.
+3. Admin can update an event until it starts.
+4. Admin cannot set total tickets below those already sold.
 
-### Event management
+### Customers
 
-1. Admin can create an event with:
-   - name
-   - date
-   - venue
-   - total available tickets
-   - price per ticket
+1. Search and list upcoming events; view details.
+2. Add tickets to a cart; order one or more tickets.
+3. Only available tickets can be bought.
 
-2. A published event must have:
-   - a valid name
-   - a valid date in the future
-   - a valid venue
-   - available quantity greater than zero
-   - a valid price
+### Inventory
 
-3. Admin can update event information before the event starts.
+1. Available = total − sold.
+2. Zero stock → not purchasable.
+3. Two customers cannot buy the last ticket.
+4. Failed payment releases the reservation.
 
-4. Admin cannot reduce the ticket quantity below the number already sold.
+### Orders and payment
 
-### Customer actions
+1. Order received → stock reserved → payment simulated.
+2. Status: `pending` → `paid` or `cancelled`.
+3. A `pending` order older than N minutes is cancelled and its stock released.
 
-1. A customer can search and list available events.
-2. A customer can view event details.
-3. A customer can add tickets to a cart.
-4. A customer can place an order for one or more tickets.
-5. A customer can only buy tickets that are still available.
+### Events and processing
 
-### Inventory rules
+1. Order created → `OrderCreated`.
+2. Payment worker consumes it → `PaymentSucceeded` or `PaymentFailed` (+ release stock).
+3. Notification worker consumes `PaymentSucceeded` → generates tickets, sends confirmation.
 
-1. Available tickets = total tickets - sold tickets.
-2. If stock is zero, the event is not purchasable.
-3. Two customers cannot buy the last ticket at the same time.
-4. If payment fails, reserved inventory must be released.
+### Tickets
 
-### Payment flow
+One per ticket bought: id, event id, guest reference, status (`valid`, `used`, `cancelled`).
 
-1. The system receives the order.
-2. Inventory is checked and reserved.
-3. Payment is simulated successfully or fails.
-4. Order status moves from pending to paid or cancelled.
-5. A pending order not resolved within N minutes is cancelled and its inventory released.
+## MVP decisions
 
-### Messaging and processing
-
-1. When an order is created, the system publishes an OrderCreated event.
-2. A payment worker consumes the event and simulates payment processing.
-3. If payment succeeds, it publishes PaymentSucceeded.
-4. If payment fails, it publishes PaymentFailed and releases inventory.
-5. A notification worker consumes the success event and sends a confirmation message.
-
-### Ticket generation
-
-1. After successful payment, the system generates ticket records.
-2. Each ticket contains:
-   - ticket id
-   - event id
-   - customer id or guest reference
-   - status: valid, used, cancelled
+| Topic | Decision |
+|---|---|
+| Identity | No accounts. Guest identified by checkout email (the guest reference). |
+| Search | Case-insensitive match on name or venue, upcoming events only. |
+| Cart | Browser only, one event per cart; checkout = one order. |
+| Order size | One event, 1–10 tickets. |
+| Price | Displayed only; orders store no amount. |
+| Admin | One shared API key. |
+| "Sold" | Includes tickets reserved by pending orders. |
+| N | 5 minutes, configurable. |
+| Ticket status | Always created `valid`; nothing changes it in the MVP. |

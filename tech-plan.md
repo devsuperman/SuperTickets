@@ -1,184 +1,135 @@
-# Tech Plan: .NET + React + PostgreSQL + AWS
+# Tech Plan
 
-Technical design for the business flow and rules defined in [business-plan.md](business-plan.md).
+Application design for [business-plan.md](business-plan.md). Exact routes, schemas and config: [contracts.md](contracts.md). Cloud deploy: [aws-publish.md](aws-publish.md) — the code is identical; only config differs.
 
-The plan has two parts:
-
-- **The application**: the services, the code structure and the resilience patterns. Everything up to [Running locally](#running-locally-docker-compose) applies wherever the app runs.
-- **Where it runs**: [locally on Docker Compose](#running-locally-docker-compose) for development, and [published to AWS](#publishing-to-aws) for the real deployment. The application code is the same in both. Only configuration changes.
-
-## Application stack
+## Stack
 
 | Concern | Choice |
 |---|---|
-| Services | ASP.NET Core Minimal APIs (.NET 10) |
-| Workers | .NET `BackgroundService` (Worker Service template) |
-| Frontend | React + Vite, fetch + `@tanstack/query` |
-| Database | PostgreSQL |
-| Cache | Redis |
-| Broker | SNS (fan-out) + SQS (one queue per consumer), through the AWS SDK |
-
-All .NET projects (services, workers, CDK) target .NET 10 (`net10.0`).
-
-## API surface
-
-Public routes:
-- `GET /events`
-- `GET /events/{id}`
-- `POST /orders`
-- `GET /orders/{id}`
-- `POST /admin/events` (API key required when deployed)
-- `PUT /admin/events/{id}` (API key required when deployed)
-
-Purchase flow:
-1. `GET /events` → Catalog Service → Redis (cache hit) or Postgres (miss, then cached).
-2. `POST /orders` → Order Service.
-3. Order Service calls Inventory Service synchronously to reserve stock.
-4. Order Service writes the order as `pending`, publishes `OrderCreated` to SNS, returns `202`.
-5. Payment worker (SQS) picks up `OrderCreated`, simulates payment, publishes `PaymentSucceeded`/`PaymentFailed`, updates order status; on failure, releases the Inventory reservation.
-6. Notification worker (SQS) picks up `PaymentSucceeded`, generates the ticket record, logs the confirmation.
-
-What sits in front of the services differs by environment. Locally, the Vite dev server proxies the routes straight to each service. On AWS, API Gateway and an internal ALB route them. See the two sections below.
-
-## Backend architecture: Vertical Slices
-
-One project per service, one folder per use case. A feature folder holds everything that use case needs (endpoint, handler, validation) and talks directly to the database, cache, and broker. A feature's handler is called directly from its endpoint. Add an interface for a dependency only where a specific feature needs to swap or mock it.
-
-```
-Order.Api/
-  Features/
-    CreateOrder/          → Endpoint + Handler + Validator
-    GetOrderById/         → Endpoint + Handler
-    ...
-  Common/                 → DbContext, shared entities, SNS/Redis clients
-  Program.cs              → DI wiring, maps each endpoint to its feature handler
-```
+| Services | ASP.NET Core Minimal APIs, .NET 10 (`net10.0`), Vertical Slice Architecture |
+| Workers | `BackgroundService` |
+| Data | EF Core + Npgsql, migrations on startup; raw SQL for reserve/release |
+| HTTP resilience | `Microsoft.Extensions.Http.Resilience` (Polly v8) |
+| Frontend | React + Vite + TypeScript, shadcn/ui (Tailwind CSS), `react-router`, `@tanstack/react-query` |
+| Database | PostgreSQL, one database per service |
+| Cache | Redis (`StackExchange.Redis`) |
+| Broker | SNS/SQS API via SDK: one topic, one queue per consumer |
+| Tests | xUnit + Testcontainers; `scripts/smoke.sh` for the running stack |
 
 ## Services
 
-**Catalog Service**: reads events from Postgres, caches list/detail responses in Redis with a short TTL, invalidates on admin update.
+| Service | Owns | Does |
+|---|---|---|
+| Catalog | `catalog` DB | Event CRUD and search; Redis cache; admin key check; sets capacity in Inventory before saving |
+| Inventory | `inventory` DB | Stock and reservations; atomic reserve; idempotent reserve/release by `orderId` |
+| Order | `orders` DB | Creates orders; reserves stock; outbox publisher; expires stale `pending` orders |
+| Worker | `orders` DB (via `Order.Data`) | Payment handler and notification handler, one queue each |
 
-**Inventory Service**: owns stock counts. The reserve step is a single `UPDATE ... WHERE available > 0 RETURNING`, so Postgres serializes concurrent reservations per row.
+## Purchase flow
 
-**Order Service**: validates the request, calls Inventory synchronously over HTTP to reserve stock, writes the order as `pending`, publishes `OrderCreated` to an SNS topic, returns `202`.
+1. `GET /events` → Catalog → Redis, or Postgres on miss.
+2. SPA shows availability (Inventory) and keeps the cart in the browser.
+3. `POST /orders` → Order saves `pending` → reserves stock in Inventory (HTTP) → writes `OrderCreated` to outbox → `202`.
+4. Outbox publisher → topic → payment queue.
+5. Worker simulates payment → `paid` or `cancelled` + outbox event; on failure, releases stock.
+6. `PaymentSucceeded` → notification queue → Worker creates tickets, logs confirmation.
+7. SPA polls `GET /orders/{id}` until not `pending`.
 
-**Payment/Notification Worker**: one process, two `BackgroundService`s, each polling its own SQS queue subscribed to the SNS topic:
-- Payment queue: simulate payment, publish `PaymentSucceeded`/`PaymentFailed`, update order status, release inventory on failure.
-- Notification queue: consume `PaymentSucceeded`, generate the ticket record, log the confirmation.
+Step-by-step logic per handler: [contracts.md › Flows](contracts.md#flows).
+
+## Code structure
+
+### .NET APIs: Vertical Slice Architecture
+
+Organize by feature, not by layer: no Controllers/Services/Repositories folders.
+
+- One project per service, one folder per feature under `Features/`.
+- A feature folder holds its endpoint, handler, request/response types and validator.
+- Endpoints call their handler directly (no mediator). Handlers use the DbContext, Redis and broker directly (no repositories).
+- Features don't call each other; shared code goes in `Common/`.
+- Add an interface only when a feature needs to swap the dependency.
+
+```
+Order.Api/
+  Features/CreateOrder/  GetOrderById/  ExpirePendingOrders/
+  Common/                → Inventory client, options
+  Program.cs             → DI and endpoint mapping
+```
+
+Only two shared projects:
+- `SuperTickets.Shared`: correlation ID, health checks, message contracts, outbox, topic/queue helpers.
+- `Order.Data`: Order DB context and migrations, used by Order.Api (runs migrations) and Worker.
+
+### React app: shadcn/ui
+
+- UI built only from shadcn/ui components, added with the shadcn CLI into `src/components/ui/`; no other component library.
+- Styling with Tailwind CSS utility classes and the shadcn theme variables; no custom CSS files beyond the theme.
+- Forms: shadcn `Form` (react-hook-form + zod). Feedback: shadcn `Sonner` toasts.
+
+```
+web/src/
+  api/              → DTO types, fetch functions
+  components/ui/    → shadcn components (generated, edit sparingly)
+  pages/customer/   pages/admin/
+  cart/             → localStorage cart
+```
 
 ## Resilience patterns
 
-Ordered by priority; each one only where a real failure point exists.
+In priority order, only where a real failure point exists.
 
 | Pattern | Where | Why |
 |---|---|---|
-| Idempotency | `POST /orders` (`Idempotency-Key` header, unique index in Order DB). Inventory `reserve`/`release` keyed by `orderId` (unique reservation row). Payment worker: unique `orderId` in a processed table. Notification worker: unique constraint on ticket `orderId`. | SQS is at-least-once and clients retry. Makes retries safe. |
-| Timeout + retry (backoff + jitter) | Order → Inventory HTTP call, via `Microsoft.Extensions.Http.Resilience` (Polly v8). AWS SDK already retries SNS/SQS calls. | Retry only once idempotency exists. Always set a timeout. |
-| Circuit breaker | Same Order → Inventory handler. When open, return `503` fast. | Same package as retry, near-zero extra code. |
-| Transactional outbox | Order Service writes the order and an `OrderCreated` row in one transaction; a `BackgroundService` publishes to SNS. Same for `PaymentSucceeded`/`PaymentFailed` in the worker. | Avoids the dual write (order saved, SNS publish failed, order stuck `pending`). |
-| Dead-letter queue | `maxReceiveCount` + DLQ on both SQS queues. | Poison messages stop looping. |
-| Saga (choreography) + expiry | `PaymentFailed` → release inventory is the compensation. A sweeper cancels `pending` orders older than N minutes and releases stock. | Covers lost messages and crashed workers. |
-| Graceful degradation | Catalog falls back to Postgres if Redis is down; jitter the TTL. | The cache is an optimization, not a dependency. |
-| Health checks + correlation ID | `/health` per service (used by the ALB when deployed). Correlation ID in HTTP headers and message attributes. | Cheap, and needed to observe the rest. |
+| Idempotency | `Idempotency-Key` on `POST /orders`; reserve/release by `orderId`; `payments` row per order; unique `(order_id, number)` on tickets | At-least-once delivery and client retries |
+| Timeout + retry | All calls to Inventory | Transient failures; safe because of idempotency |
+| Circuit breaker | Order → Inventory reserve; open → `503` | Fail fast when Inventory is down |
+| Transactional outbox | Order and Worker write events in the same transaction as the state change; Order.Api publishes (`SKIP LOCKED`) | No dual write |
+| Dead-letter queue | Both queues, `maxReceiveCount` 5 | Poison messages stop looping |
+| Saga + expiry | Payment failure → release stock; sweeper expires stale `pending` orders; status updates only `WHERE status = 'pending'` | Lost messages, crashed workers, abandoned clients |
+| Graceful degradation | Catalog falls back to Postgres if Redis fails; jittered TTL | Cache is optional |
+| Health + correlation ID | `/health` everywhere; `X-Correlation-Id` in headers, message attributes, logs | Observability |
 
-Not adopted: service mesh, CQRS, event sourcing, bulkheads (API Gateway throttling covers it), full tracing stack.
+Not adopted: service mesh, CQRS, event sourcing, bulkheads, full tracing.
 
-Demo toggles: config for payment failure rate and Inventory delay/error rate, to trigger retries, the open breaker, the DLQ and compensation on demand.
+Demo toggles (payment failure, Inventory delay/errors, notification errors) force retries, breaker, DLQ and compensation: [contracts.md › Configuration](contracts.md#configuration).
 
-## Database
+## Testing
 
-One PostgreSQL server with one database per service (Catalog, Inventory, Order). No service reads another service's database.
+- Integration tests per service: `WebApplicationFactory` + Testcontainers (Postgres, Redis, LocalStack).
+- Other services stubbed with a fake `HttpMessageHandler` returning contract responses.
+- Required: last-ticket race (one winner), replay of every idempotent operation, Redis-down fallback.
 
-## Running locally (Docker Compose)
+## Local run
 
-`docker compose up` runs the whole app on one machine. No AWS account is needed.
+`docker compose up`. No cloud account needed.
 
-| Compose service | What it runs | Stands in for (on AWS) |
-|---|---|---|
-| `postgres` | PostgreSQL; an init script creates the Catalog, Inventory and Order databases | RDS |
-| `redis` | Redis | ElastiCache |
-| `localstack` | [LocalStack](https://localstack.cloud) with SNS and SQS; an init script creates the topic, both queues, their DLQs and the subscriptions | SNS + SQS |
-| `catalog-api` | Catalog Service | ECS Fargate task(s) |
-| `inventory-api` | Inventory Service | ECS Fargate task |
-| `order-api` | Order Service | ECS Fargate task |
-| `worker` | Payment/Notification Worker | ECS Fargate task |
-| `web` | React SPA on the Vite dev server | S3 + CloudFront |
-
-```
-Browser
-   │
-   ▼
-web (Vite dev server, proxies API routes)
-   ├──▶ catalog-api ──▶ redis, postgres
-   └──▶ order-api ──▶ inventory-api ──▶ postgres
-            │
-            ▼
-        localstack (SNS → SQS) ──▶ worker ──▶ postgres
-```
-
-How it differs from AWS:
-- No API Gateway or ALB. The Vite proxy maps `/events` and `/admin/*` to `catalog-api` and `/orders` to `order-api`, so the SPA uses the same relative routes in both environments.
-- One instance of each service, so there is no load balancing to observe locally.
-- The `/admin/*` API key is not checked, because API Gateway enforces it.
-- Services find their dependencies through environment variables: connection strings for Postgres and Redis, and `AWS_ENDPOINT_URL` pointing at LocalStack. The AWS SDK calls are the same ones that run against real AWS. When deployed, `AWS_ENDPOINT_URL` is not set.
-
-## Publishing to AWS
-
-The same containers and SPA, deployed with AWS CDK (C#). Each local piece maps to a managed AWS service.
-
-| Concern | AWS service |
+| Service | Runs |
 |---|---|
-| Compute | ECS Fargate (images in ECR) |
-| Database | Amazon RDS for PostgreSQL |
-| Cache | Amazon ElastiCache for Redis |
-| Broker | Amazon SNS + SQS |
-| API gateway | Amazon API Gateway (HTTP API) |
-| Load balancer | Internal Application Load Balancer, behind the gateway via VPC Link |
-| Frontend hosting | S3 + CloudFront |
-| IaC | AWS CDK in C# |
-| CI/CD | GitHub Actions → ECR → ECS; S3 sync + CloudFront invalidation for the SPA |
-
-### Request path
+| `postgres` | PostgreSQL (databases created by migrations) |
+| `redis` | Redis |
+| `localstack` | SNS + SQS; init script creates topic, queues, DLQs, subscriptions |
+| `catalog-api`, `inventory-api`, `order-api` | APIs |
+| `worker` | Worker |
+| `web` | SPA on Vite dev server; proxies API paths per [routing](contracts.md#routing) |
 
 ```
-Browser (React on CloudFront)
-   │
-   ▼
-Amazon API Gateway (HTTP API, public)
-   │  VPC Link
-   ▼
-Internal ALB  ──▶ ECS Fargate: Catalog Service (2 tasks, round-robin)
-             ──▶ ECS Fargate: Order Service
-             ──▶ ECS Fargate: Inventory Service
+Browser → web (Vite proxy)
+            ├─▶ catalog-api ─▶ redis, postgres, inventory-api
+            └─▶ order-api ───▶ postgres, inventory-api, localstack
+localstack (SNS → SQS) ─▶ worker ─▶ postgres, inventory-api
 ```
 
-- API Gateway owns the public surface: routing, throttling, and an API-key usage plan on `/admin/*`.
-- The ALB distributes traffic across task instances; Catalog runs 2 tasks.
-- The worker runs as an ECS service with no ingress. It only polls SQS.
-- One RDS instance holds the three service databases.
+- One instance per service; no gateway or load balancer.
+- Dependencies come from env vars; `AWS_ENDPOINT_URL` points the SDK at LocalStack.
+- Admin key is a fixed dev value in `docker-compose.yml`.
 
-### Deployment milestones
+## Definition of done
 
-1. CDK stack: VPC, RDS (Postgres), ElastiCache (Redis), ECR repos.
-2. Catalog Service → ECS Fargate, backed by Redis cache.
-3. Inventory Service → ECS Fargate.
-4. Order Service → ECS Fargate + SNS topic.
-5. Payment/Notification Worker → ECS Fargate service (no ingress) + 2 SQS queues, each with a DLQ. Order/Payment publish through an outbox table.
-6. Internal ALB in front of Catalog (2 tasks).
-7. API Gateway (HTTP API) with VPC Link to the ALB.
-8. React SPA → S3 + CloudFront, pointed at the API Gateway URL.
-9. GitHub Actions pipeline for the .NET services and the SPA.
+Checked by `scripts/smoke.sh`. Cloud-only checks: [aws-publish.md](aws-publish.md#definition-of-done).
 
-### Definition of done
-
-- `GET /events` returns data through the public API.
-- A customer can place an order end to end and receive a confirmation.
-- Two concurrent orders for the last ticket cannot both succeed.
-- `OrderCreated` triggers the async worker path (SQS → payment → notification).
-- Catalog reads are served from Redis on a cache hit.
-- Requests are distributed across 2 Catalog tasks behind the ALB.
-- All public traffic goes through API Gateway.
-
-## Out of scope
-
-Everything excluded in business-plan.md, plus: multi-AZ RDS, autoscaling policies, WAF, Cognito/real auth, custom domain/ACM cert.
+- `GET /events` returns data.
+- An order completes end to end with tickets.
+- Two concurrent orders for the last ticket: one succeeds.
+- `OrderCreated` drives payment → notification.
+- Catalog serves cache hits from Redis.
+- Forced payment failure cancels the order and restores stock; forced notification failure reaches the DLQ.

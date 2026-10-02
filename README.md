@@ -1,41 +1,43 @@
 # SuperTickets
 
-A minimal ticket-selling app built to learn and exercise core distributed-systems patterns: cache, message broker, load balancer, API gateway, and microservices. Not a production ticket marketplace. Business rules live in [business-plan.md](business-plan.md), architecture and stack in [tech-plan.md](tech-plan.md).
+Minimal ticket-selling app for learning distributed-systems patterns: cache, message broker, load balancer, API gateway, microservices. Not a production marketplace.
 
-## AI-native development
+## Docs
 
-This project is built with an AI-native approach. AI coding agents do most of the design, coding and documentation work, and I review and steer it:
+| Doc | Content |
+|---|---|
+| [business-plan.md](business-plan.md) | Scope and business rules |
+| [tech-plan.md](tech-plan.md) | Architecture, resilience patterns, local run |
+| [contracts.md](contracts.md) | Routes, payloads, messages, schemas, config, ports |
+| [aws-publish.md](aws-publish.md) | AWS infrastructure and deploy |
+| [tasks.md](tasks.md) | Work breakdown, parallel waves |
+| [CLAUDE.md](CLAUDE.md) | Conventions for coding agents |
 
-- The docs come first. [business-plan.md](business-plan.md) and [tech-plan.md](tech-plan.md) are the source of truth that the agents read before they change anything, and they are updated when a decision changes.
-- [CLAUDE.md](CLAUDE.md) holds the conventions the agents must follow in this repo.
-- Changes arrive as small, reviewed commits and pull requests.
+## AI-native
+
+Agents do most of the design, code and docs; a human reviews. The docs are the source of truth and change in the same PR as the decision. Contracts are fixed up front so tasks run in parallel against stubs.
 
 ## Flow
 
-Admin creates an event → customer browses and buys tickets → payment is simulated → order triggers async processing → ticket confirmation is generated. Pending orders that aren't resolved in time are cancelled and their stock released.
+Admin creates an event → guest buys tickets (email only) → payment simulated → async processing → tickets generated. Unresolved pending orders expire and release stock.
 
 ## Services
 
-- **React SPA**: browse events, place orders, admin event management
-- **Catalog Service**: event data, cached in Redis
-- **Inventory Service**: ticket stock, reservation/release, prevents overselling
-- **Order Service**: creates orders, publishes order events
-- **Payment/Notification Worker**: consumes events, simulates payment, generates tickets, logs confirmations
+| Service | Role |
+|---|---|
+| React SPA | Browse, buy, admin |
+| Catalog | Events, Redis cache, admin API key |
+| Inventory | Stock, reserve/release, no overselling |
+| Order | Orders, outbox, pending-order expiry |
+| Worker | Payment simulation, ticket generation |
 
-Built with ASP.NET Core Minimal APIs (.NET 10), React + Vite, PostgreSQL (one database per service), Redis, and SNS+SQS.
+Stack: .NET 10 Minimal APIs (Vertical Slice Architecture), React + Vite + shadcn/ui, PostgreSQL, Redis, SNS/SQS.
 
-## Running locally
+## Run
 
-`docker compose up` runs everything on one machine: Postgres, Redis, LocalStack (SNS/SQS), the three services, the worker, and the SPA on the Vite dev server. No AWS account is needed. See [tech-plan.md](tech-plan.md#running-locally-docker-compose).
-
-## Publishing to AWS
-
-The same containers deploy to AWS with CDK (C#): ECS Fargate for compute, RDS PostgreSQL, ElastiCache Redis, SNS+SQS, API Gateway in front of an internal ALB, and the SPA on S3 + CloudFront. See [tech-plan.md](tech-plan.md#publishing-to-aws).
-
-## Resilience patterns
-
-Idempotency, transactional outbox, dead-letter queues, saga with expiry, and a circuit breaker on the Order → Inventory call. See [tech-plan.md](tech-plan.md#resilience-patterns).
+- **Local:** `docker compose up` (LocalStack for SNS/SQS, no AWS account). See [tech-plan.md](tech-plan.md#local-run).
+- **AWS:** `cdk deploy --all` (ECS Fargate, RDS, ElastiCache, SNS/SQS, API Gateway + ALB, S3 + CloudFront). See [aws-publish.md](aws-publish.md).
 
 ## Status
 
-Planning stage, no code yet. Next steps are tracked in [tech-plan.md](tech-plan.md#deployment-milestones).
+Planning done, no code yet. Start with T01 in [tasks.md](tasks.md).

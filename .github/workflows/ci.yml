@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dotnet:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - run: dotnet restore SuperTickets.slnx
+      - run: dotnet build SuperTickets.slnx --no-restore -c Release
+      # Testcontainers uses the Docker daemon preinstalled on ubuntu runners.
+      - run: dotnet test SuperTickets.slnx --no-build -c Release
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: src/web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+
+  cdk-synth:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect CDK app
+        id: detect
+        run: |
+          if [ -f infra/cdk/cdk.json ]; then echo "present=true" >> "$GITHUB_OUTPUT"; fi
+      - if: steps.detect.outputs.present == 'true'
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - if: steps.detect.outputs.present == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: src/web/package-lock.json
+      # WebStack deploys src/web/dist, so it must exist for synth.
+      - if: steps.detect.outputs.present == 'true'
+        working-directory: src/web
+        run: npm ci && npm run build
+      - if: steps.detect.outputs.present == 'true'
+        working-directory: infra/cdk
+        env:
+          CDK_DEFAULT_ACCOUNT: "000000000000"
+          CDK_DEFAULT_REGION: us-east-1
+        run: npx --yes aws-cdk synth --quiet

@@ -1,8 +1,6 @@
-using Microsoft.AspNetCore.Mvc.Testing;
-
 namespace Inventory.Api.Tests;
 
-public class HealthTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>
+public class HealthTests(InventoryFixture factory) : IClassFixture<InventoryFixture>
 {
     [Fact]
     public async Task Health_returns_200_and_correlation_id()

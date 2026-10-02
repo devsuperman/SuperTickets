@@ -1,6 +1,6 @@
 # Tech Plan
 
-Application design for [business-plan.md](business-plan.md). Exact routes, schemas and config: [contracts.md](contracts.md). Cloud deploy: [aws-publish.md](aws-publish.md) — the code is identical; only config differs.
+Application design for [business-plan.md](business-plan.md). Exact routes, schemas and config: [contracts.md](contracts.md).
 
 ## Stack
 
@@ -13,8 +13,9 @@ Application design for [business-plan.md](business-plan.md). Exact routes, schem
 | Frontend | React + Vite + TypeScript, shadcn/ui (Tailwind CSS), `react-router`, `@tanstack/react-query` |
 | Database | PostgreSQL, one database per service |
 | Cache | Redis (`StackExchange.Redis`) |
-| Broker | SNS/SQS API via SDK: one topic, one queue per consumer |
-| Tests | xUnit + Testcontainers; `scripts/smoke.sh` for the running stack |
+| Broker | RabbitMQ (`RabbitMQ.Client`): one topic exchange, one quorum queue per consumer, DLQ per queue |
+| Gateway / LB | nginx: routing, rate limit, round-robin over Catalog replicas |
+| Tests | xUnit + Testcontainers (Postgres, Redis, RabbitMQ); `scripts/smoke.sh` for the running stack |
 
 ## Services
 
@@ -57,7 +58,7 @@ Order.Api/
 ```
 
 Only two shared projects:
-- `SuperTickets.Shared`: correlation ID, health checks, message contracts, outbox, topic/queue helpers.
+- `SuperTickets.Shared`: correlation ID, health checks, message contracts, outbox, RabbitMQ connection/topology helpers.
 - `Order.Data`: Order DB context and migrations, used by Order.Api (runs migrations) and Worker.
 
 ### React app: shadcn/ui
@@ -84,7 +85,7 @@ In priority order, only where a real failure point exists.
 | Timeout + retry | All calls to Inventory | Transient failures; safe because of idempotency |
 | Circuit breaker | Order → Inventory reserve; open → `503` | Fail fast when Inventory is down |
 | Transactional outbox | Order and Worker write events in the same transaction as the state change; Order.Api publishes (`SKIP LOCKED`) | No dual write |
-| Dead-letter queue | Both queues, `maxReceiveCount` 5 | Poison messages stop looping |
+| Dead-letter queue | Both queues (quorum `x-delivery-limit`), 5 deliveries then DLQ | Poison messages stop looping |
 | Saga + expiry | Payment failure → release stock; sweeper expires stale `pending` orders; status updates only `WHERE status = 'pending'` | Lost messages, crashed workers, abandoned clients |
 | Graceful degradation | Catalog falls back to Postgres if Redis fails; jittered TTL | Cache is optional |
 | Health + correlation ID | `/health` everywhere; `X-Correlation-Id` in headers, message attributes, logs | Observability |
@@ -95,37 +96,40 @@ Demo toggles (payment failure, Inventory delay/errors, notification errors) forc
 
 ## Testing
 
-- Integration tests per service: `WebApplicationFactory` + Testcontainers (Postgres, Redis, LocalStack).
+- Integration tests per service: `WebApplicationFactory` + Testcontainers (Postgres, Redis, RabbitMQ).
 - Other services stubbed with a fake `HttpMessageHandler` returning contract responses.
 - Required: last-ticket race (one winner), replay of every idempotent operation, Redis-down fallback.
 
 ## Local run
 
-`docker compose up`. No cloud account needed.
+`docker compose up`. Everything runs in containers; no cloud account needed.
 
 | Service | Runs |
 |---|---|
 | `postgres` | PostgreSQL (databases created by migrations) |
 | `redis` | Redis |
-| `localstack` | SNS + SQS; init script creates topic, queues, DLQs, subscriptions |
+| `rabbitmq` | RabbitMQ + management UI; services declare exchange, queues, DLQs and bindings on startup |
 | `catalog-api`, `inventory-api`, `order-api` | APIs |
 | `worker` | Worker |
-| `web` | SPA on Vite dev server; proxies API paths per [routing](contracts.md#routing) |
+| `gateway` | nginx on :8080: the only entry point; routes per [routing](contracts.md#routing), rate-limits, load-balances Catalog |
+| `web` | SPA on Vite dev server, reached through the gateway |
 
 ```
-Browser → web (Vite proxy)
-            ├─▶ catalog-api ─▶ redis, postgres, inventory-api
-            └─▶ order-api ───▶ postgres, inventory-api, localstack
-localstack (SNS → SQS) ─▶ worker ─▶ postgres, inventory-api
+Browser → gateway (nginx)
+            ├─▶ web (SPA)
+            ├─▶ catalog-api ×2 ─▶ redis, postgres, inventory-api
+            ├─▶ inventory-api   (availability route only)
+            └─▶ order-api ─────▶ postgres, inventory-api, rabbitmq
+rabbitmq (exchange → queues) ─▶ worker ─▶ postgres, inventory-api
 ```
 
-- One instance per service; no gateway or load balancer.
-- Dependencies come from env vars; `AWS_ENDPOINT_URL` points the SDK at LocalStack.
+- Catalog runs 2 replicas behind nginx; other services run one instance. `/inventory/*` is not routed by the gateway.
+- Dependencies come from env vars (service names resolve on the Compose network).
 - Admin key is a fixed dev value in `docker-compose.yml`.
 
 ## Definition of done
 
-Checked by `scripts/smoke.sh`. Cloud-only checks: [aws-publish.md](aws-publish.md#definition-of-done).
+Checked by `scripts/smoke.sh` through the gateway.
 
 - `GET /events` returns data.
 - An order completes end to end with tickets.
@@ -133,3 +137,4 @@ Checked by `scripts/smoke.sh`. Cloud-only checks: [aws-publish.md](aws-publish.m
 - `OrderCreated` drives payment → notification.
 - Catalog serves cache hits from Redis.
 - Forced payment failure cancels the order and restores stock; forced notification failure reaches the DLQ.
+- `/inventory/*` is not reachable through the gateway; GETs are spread across both Catalog replicas.

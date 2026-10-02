@@ -1,27 +1,27 @@
-using Amazon.SimpleNotificationService;
-using Amazon.SimpleNotificationService.Model;
+using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
+using RabbitMQ.Client;
 
 namespace SuperTickets.Shared.Messaging;
 
 /// <summary>
-/// Publishes unpublished outbox rows to the SNS topic (<c>FOR UPDATE SKIP LOCKED</c>), then sets <c>published_at</c>.
+/// Publishes unpublished outbox rows to the RabbitMQ exchange (routing key = event type; <c>FOR UPDATE SKIP LOCKED</c>), then sets <c>published_at</c>.
 /// At-least-once: a crash after publish and before commit republishes the row.
 /// Register with <c>AddHostedService&lt;OutboxPublisher&lt;MyDbContext&gt;&gt;()</c>.
 /// </summary>
 public sealed class OutboxPublisher<TDbContext>(
     IServiceScopeFactory scopes,
-    IAmazonSimpleNotificationService sns,
-    IOptions<MessagingOptions> options,
+    RabbitMq rabbit,
     ILogger<OutboxPublisher<TDbContext>> logger) : BackgroundService
     where TDbContext : DbContext
 {
     public const int BatchSize = 50;
     public TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(1);
+
+    private IChannel? _channel;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -48,6 +48,12 @@ public sealed class OutboxPublisher<TDbContext>(
     /// <summary>Publishes one batch; returns the number of rows published.</summary>
     public async Task<int> PublishPendingAsync(CancellationToken ct = default)
     {
+        await rabbit.EnsureTopologyAsync(ct);
+        if (_channel is not { IsOpen: true })
+        {
+            _channel = await rabbit.CreateChannelAsync(publisherConfirms: true, ct: ct);
+        }
+
         await using var scope = scopes.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<TDbContext>();
         await using var tx = await db.Database.BeginTransactionAsync(ct);
@@ -59,24 +65,20 @@ public sealed class OutboxPublisher<TDbContext>(
         var count = 0;
         foreach (var row in rows)
         {
-            var request = new PublishRequest
+            var props = new BasicProperties
             {
-                TopicArn = options.Value.TopicArn,
-                Message = row.Payload,
-                MessageAttributes = new Dictionary<string, MessageAttributeValue>
-                {
-                    ["eventType"] = new() { DataType = "String", StringValue = row.Type },
-                    ["messageId"] = new() { DataType = "String", StringValue = row.Id.ToString() },
-                },
+                DeliveryMode = DeliveryModes.Persistent,
+                ContentType = "application/json",
+                MessageId = row.Id.ToString(),
+                CorrelationId = row.CorrelationId,
+                Headers = new Dictionary<string, object?> { ["eventType"] = row.Type },
             };
-            if (row.CorrelationId is not null)
-            {
-                request.MessageAttributes["correlationId"] = new() { DataType = "String", StringValue = row.CorrelationId };
-            }
 
             try
             {
-                await sns.PublishAsync(request, ct);
+                await _channel.BasicPublishAsync(
+                    rabbit.Options.Exchange, row.Type, mandatory: false, basicProperties: props,
+                    body: Encoding.UTF8.GetBytes(row.Payload), cancellationToken: ct);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

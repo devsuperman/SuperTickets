@@ -12,11 +12,8 @@ x-dotnet-health: &dotnet-health
   retries: 20
   start_period: 10s
 
-x-aws: &aws-env
-  AWS_ENDPOINT_URL: http://localstack:4566
-  AWS_REGION: us-east-1
-  AWS_ACCESS_KEY_ID: test
-  AWS_SECRET_ACCESS_KEY: test
+x-messaging: &messaging-env
+  Messaging__ConnectionString: amqp://guest:guest@rabbitmq:5672
 
 services:
   postgres:
@@ -40,17 +37,11 @@ services:
       timeout: 5s
       retries: 20
 
-  localstack:
-    image: localstack/localstack:3
-    environment:
-      SERVICES: sns,sqs
-      AWS_DEFAULT_REGION: us-east-1
-    ports: ["4566:4566"]
-    volumes:
-      - ./infra/localstack/init-aws.sh:/etc/localstack/init/ready.d/init-aws.sh:ro
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    ports: ["5672:5672", "15672:15672"]
     healthcheck:
-      # healthy only after init-aws.sh has created the last queue
-      test: ["CMD-SHELL", "awslocal sqs get-queue-url --queue-name notification-queue"]
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 5s
       timeout: 10s
       retries: 30
@@ -75,7 +66,7 @@ services:
       Services__InventoryUrl: http://inventory-api:8080
       Admin__ApiKey: dev-admin-key
       Cache__TtlSeconds: "60"
-    ports: ["5101:8080"]
+    deploy: { replicas: 2 }  # nginx round-robins across both; no host port
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -85,45 +76,44 @@ services:
   order-api:
     build: { context: ., dockerfile: src/Order.Api/Dockerfile }
     environment:
-      <<: *aws-env
+      <<: *messaging-env
       ConnectionStrings__Orders: Host=postgres;Database=orders;Username=postgres;Password=postgres
       Services__InventoryUrl: http://inventory-api:8080
-      Messaging__TopicArn: arn:aws:sns:us-east-1:000000000000:supertickets-events
       Orders__PendingTimeoutMinutes: "5"
       Orders__SweepIntervalSeconds: "30"
     ports: ["5103:8080"]
     depends_on:
       postgres: { condition: service_healthy }
-      localstack: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
       inventory-api: { condition: service_healthy }
     healthcheck: *dotnet-health
 
   worker:
     build: { context: ., dockerfile: src/Worker/Dockerfile }
     environment:
-      <<: *aws-env
+      <<: *messaging-env
       ConnectionStrings__Orders: Host=postgres;Database=orders;Username=postgres;Password=postgres
       Services__InventoryUrl: http://inventory-api:8080
-      Messaging__PaymentQueueUrl: http://localstack:4566/000000000000/payment-queue
-      Messaging__NotificationQueueUrl: http://localstack:4566/000000000000/notification-queue
       Payment__FailureRate: "0.1"
       Demo__NotificationErrorRate: "0"
     depends_on:
       order-api: { condition: service_healthy }  # order-api runs the orders migrations
-      localstack: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
       inventory-api: { condition: service_healthy }
 
   web:
-    build: { context: src/web }
-    environment:
-      CATALOG_URL: http://catalog-api:8080
-      INVENTORY_URL: http://inventory-api:8080
-      ORDER_URL: http://order-api:8080
-    ports: ["5173:5173"]
+    build: { context: src/web }  # reached through the gateway; no host port
+
+  gateway:
+    image: nginx:1.28-alpine
+    ports: ["8080:8080"]
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
       catalog-api: { condition: service_healthy }
       inventory-api: { condition: service_healthy }
       order-api: { condition: service_healthy }
+      web: { condition: service_started }
 
 volumes:
   pgdata:

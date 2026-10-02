@@ -44,4 +44,4 @@ Stack: .NET 10 Minimal APIs (Vertical Slice Architecture), React + Vite + shadcn
 
 ## Status
 
-All tasks implemented. The latest change (T19: RabbitMQ + nginx replace SNS/SQS and AWS) has not yet been run against a live Compose stack: run `docker compose up --build -d --wait` and `scripts/smoke.sh`. See [tasks.md](docs/project/tasks.md).
+All tasks implemented. Not yet verified against a live Compose stack: run `docker compose up --build -d --wait` and `scripts/smoke.sh`. See [tasks.md](tasks.md).

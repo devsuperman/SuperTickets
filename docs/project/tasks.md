@@ -10,7 +10,6 @@ graph LR
   T03 --> T08[T08 Order] & T09[T09 Worker]
   T04 --> T10[T10 SPA customer] & T11[T11 SPA admin] & T12[T12 CI]
   T02 & T05 & T06 & T08 & T09 & T10 & T11 --> T16[T16 Local e2e]
-  T16 --> T19[T19 Cloud-neutral rework]
 ```
 
 | Wave | Parallel tasks |
@@ -19,11 +18,8 @@ graph LR
 | 1 | T02, T03, T04, T05, T06 |
 | 2 | T08, T09, T10, T11, T12 |
 | 3 | T16 |
-| 4 | T19 |
 
-Critical path: T01 → T03 → T08 → T16 → T19. Prioritize T01 and T03.
-
-T07, T13–T15, T17 and T18 (AWS CDK, deploy, AWS Definition of done) were removed by T19.
+Critical path: T01 → T03 → T08 → T16. Prioritize T01 and T03.
 
 ## Rules
 
@@ -104,9 +100,3 @@ T07, T13–T15, T17 and T18 (AWS CDK, deploy, AWS Definition of done) were remov
 - **Do:** `scripts/smoke.sh` (bash, curl, jq) covering the [Definition of done](tech-plan.md#definition-of-done); `BASE_URL` param; `--no-toggles` skips failure-toggle checks. Fix integration bugs in their owning project. Add the command to README and CLAUDE.md.
 - **Owns:** `scripts/`.
 - **Done:** passes on a clean `docker compose up --build`.
-
-### T19 — Cloud-neutral rework
-- **Needs:** T16
-- **Do:** Replace SNS/SQS + LocalStack with RabbitMQ (`RabbitMq` connection/topology, `OutboxPublisher`, `QueueConsumer`; tests on Testcontainers RabbitMQ). Add the nginx `gateway` (routing, rate limit, 2 Catalog replicas) and make it the only entry point (:8080). Delete AWS CDK, deploy workflow and aws-publish.md; update docs.
-- **Owns:** `src/SuperTickets.Shared/Messaging/`, `infra/nginx/`, `docker-compose.yml`, `scripts/smoke.sh`, docs.
-- **Done:** `dotnet test` passes; `docker compose up --build -d --wait` then `scripts/smoke.sh` passes through the gateway.

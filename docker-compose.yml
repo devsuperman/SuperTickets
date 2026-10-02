@@ -1,6 +1,8 @@
 x-dotnet-health: &dotnet-health
   test:
-    - CMD-SHELL
+    - CMD
+    - bash
+    - -c
     - >-
       exec 3<>/dev/tcp/127.0.0.1/8080 &&
       printf 'GET /health HTTP/1.0\r\n\r\n' >&3 &&

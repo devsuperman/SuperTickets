@@ -35,7 +35,7 @@ Stack: .NET 10 Minimal APIs (Vertical Slice Architecture), React + Vite + shadcn
 
 ## Run
 
-- **Local:** `docker compose up` (LocalStack for SNS/SQS, no AWS account). See [tech-plan.md](tech-plan.md#local-run).
+- **Local:** `docker compose up` (LocalStack for SNS/SQS, no AWS account). See [tech-plan.md](tech-plan.md#local-run). Verify with `scripts/smoke.sh` (`BASE_URL` optional, `--no-toggles` skips the failure-toggle checks).
 - **AWS:** `cdk deploy --all` (ECS Fargate, RDS, ElastiCache, SNS/SQS, API Gateway + ALB, S3 + CloudFront). See [aws-publish.md](aws-publish.md).
 
 ## Status

@@ -13,6 +13,8 @@ dotnet test tests/Catalog.Api.Tests            # one test project
 dotnet test --filter "FullyQualifiedName~HealthTests"   # single test/class
 dotnet run --project src/Catalog.Api           # run a service (set ASPNETCORE_URLS=http://localhost:8080)
 docker build -f src/Catalog.Api/Dockerfile -t catalog-api .   # image per service, repo-root context
+docker compose up --build -d --wait            # full local stack
+scripts/smoke.sh [BASE_URL] [--no-toggles]     # e2e Definition of done (default http://localhost:5173; ~3 min with toggles)
 ```
 
 ## Docs

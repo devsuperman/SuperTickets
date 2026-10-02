@@ -78,7 +78,7 @@ seq 200 | xargs -P 50 -I{} curl -s -o /dev/null -w '%{http_code}\n' localhost:80
 - The gateway is a single point of failure; production runs several behind a cloud or anycast balancer.
 - No auth at the gateway (admin uses a shared API key checked in Catalog); no TLS, caching or request transformation.
 - Rate limit is per client IP and per nginx instance; behind NAT many users share one budget.
-- Passive health only: open-source nginx has no active health checks, so a dead replica may cost a failed request until DNS drops it (Compose also removes unhealthy containers from service routing only if stopped).
+- Passive health only: open-source nginx has no active health checks, so a dead replica may cost a failed request until DNS drops it.
 - Only Catalog is replicated; no sticky sessions, no L4 balancing, no service discovery beyond Docker DNS.
 
 ## Check yourself

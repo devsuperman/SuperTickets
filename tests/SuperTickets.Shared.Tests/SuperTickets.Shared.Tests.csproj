@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="10.*" />
+    <ProjectReference Include="../../src/SuperTickets.Shared/SuperTickets.Shared.csproj" />
+  </ItemGroup>
+</Project>

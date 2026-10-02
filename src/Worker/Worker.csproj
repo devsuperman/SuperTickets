@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+  <ItemGroup>
+    <ProjectReference Include="../SuperTickets.Shared/SuperTickets.Shared.csproj" />
+    <ProjectReference Include="../Order.Data/Order.Data.csproj" />
+  </ItemGroup>
+</Project>

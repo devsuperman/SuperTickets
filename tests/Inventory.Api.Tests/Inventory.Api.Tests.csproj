@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.*" />
+    <ProjectReference Include="../../src/Inventory.Api/Inventory.Api.csproj" />
+  </ItemGroup>
+</Project>

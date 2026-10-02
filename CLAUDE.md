@@ -2,7 +2,18 @@
 
 Guidance for Claude Code (claude.ai/code) in this repo.
 
-SuperTickets: minimal ticket app for learning cache, broker, load balancer, API gateway and microservices. No code yet; when T01 lands, add build, test, single-test and `docker compose` commands here.
+SuperTickets: minimal ticket app for learning cache, broker, load balancer, API gateway and microservices.
+
+## Commands
+
+```bash
+dotnet build                                   # whole solution (warnings are errors)
+dotnet test                                    # all tests
+dotnet test tests/Catalog.Api.Tests            # one test project
+dotnet test --filter "FullyQualifiedName~HealthTests"   # single test/class
+dotnet run --project src/Catalog.Api           # run a service (set ASPNETCORE_URLS=http://localhost:8080)
+docker build -f src/Catalog.Api/Dockerfile -t catalog-api .   # image per service, repo-root context
+```
 
 ## Docs
 

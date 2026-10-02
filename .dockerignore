@@ -1,0 +1,7 @@
+**/bin/
+**/obj/
+**/node_modules/
+.git/
+infra/
+tests/
+src/web/

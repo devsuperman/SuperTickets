@@ -25,6 +25,8 @@ Two kinds of repetition, handled differently:
 
 ## How SuperTickets applies it
 
+**Where the key comes from.** The client generates it; the server only requires it (a missing header, or one longer than 100 chars, is a 400 validation error). In the web app, [cart.ts](../../src/web/src/cart/cart.ts) gives each cart item a `key` from `crypto.randomUUID()`: `addToCart` assigns a fresh one, and `setQuantity` replaces it only when the quantity actually changes. The cart lives in `localStorage`, so the same key survives reloads and retries. [Cart.tsx](../../src/web/src/pages/customer/Cart.tsx) passes `item.key` to `createOrder` ([api/index.ts](../../src/web/src/api/index.ts)), which sends it as the `Idempotency-Key` header. The effect: retrying an unchanged cart returns the same order, while editing the quantity counts as a new checkout and creates a new order.
+
 Every idempotent spot, in the order a purchase meets them (contract: [contracts.md](../project/contracts.md), plan: [tech-plan.md › Resilience patterns](../project/tech-plan.md)).
 
 1. **`Idempotency-Key` on `POST /orders`.** [CreateOrder.Handle](../../src/Order.Api/Features/CreateOrder/CreateOrder.cs) looks up the order by key. If new, it inserts a `pending` row; two concurrent first requests collide on the unique index `ux_orders_idempotency_key` ([OrderDbContext](../../src/Order.Data/OrderDbContext.cs)), the loser catches the `UniqueViolation` and returns the winner. If the order is already final, or `pending` with an `OrderCreated` outbox row (`HasOrderCreated`), it is returned as-is (202). A `pending` order without that row is *resumed* at the reserve step, which is what makes a retry after a 503 work.

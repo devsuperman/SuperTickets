@@ -10,6 +10,9 @@ graph LR
   T03 --> T08[T08 Order] & T09[T09 Worker]
   T04 --> T10[T10 SPA customer] & T11[T11 SPA admin] & T12[T12 CI]
   T02 & T05 & T06 & T08 & T09 & T10 & T11 --> T16[T16 Local e2e]
+  T04 --> T17[T17 Lab engine] & T18[T18 Lab UI shell]
+  T17 & T18 --> T19[T19 Lab scenarios 1-6] & T20[T20 Lab scenarios 7-12]
+  T19 & T20 --> T21[T21 Lab docs links]
 ```
 
 | Wave | Parallel tasks |
@@ -18,6 +21,9 @@ graph LR
 | 1 | T02, T03, T04, T05, T06 |
 | 2 | T08, T09, T10, T11, T12 |
 | 3 | T16 |
+| 4 (Lab) | T17, T18 |
+| 5 (Lab) | T19, T20 |
+| 6 (Lab) | T21 |
 
 Critical path: T01 → T03 → T08 → T16. Prioritize T01 and T03.
 
@@ -100,3 +106,37 @@ Critical path: T01 → T03 → T08 → T16. Prioritize T01 and T03.
 - **Do:** `scripts/smoke.sh` (bash, curl, jq) covering the [Definition of done](tech-plan.md#definition-of-done); `BASE_URL` param; `--no-toggles` skips failure-toggle checks. Fix integration bugs in their owning project. Add the command to README and CLAUDE.md.
 - **Owns:** `scripts/`.
 - **Done:** passes on a clean `docker compose up --build`.
+
+## Lab tasks
+
+Simulation playground; design in [lab-plan.md](lab-plan.md). Build against the engine types in lab-plan.md so T17 and T18 run in parallel.
+
+### T17 — Lab engine
+- **Needs:** T04
+- **Do:** discrete-event engine per [lab-plan › Simulation engine](lab-plan.md#simulation-engine): seeded RNG, virtual clock, one module per service, `Sim` interface. Add Vitest and `npm test`; append the web `test` step to CI.
+- **Owns:** `src/web/src/lab/engine/`, `src/web/package.json` (test script, Vitest dev dependency), web test step in `.github/workflows/ci.yml`.
+- **Done:** `npm test` passes the invariants in [lab-plan › Done](lab-plan.md#done).
+
+### T18 — Lab UI shell
+- **Needs:** T04
+- **Do:** `/lab`, `/lab/:scenario` routes; ArchitectureDiagram (inline SVG, animated `SimEvent`s), Inspector tabs, Controls, ExplainPanel, EventLog, run/pause/step/reset/speed; sandbox scenario. Stub the engine with a fake `Sim` until T17 merges. Add shadcn components with the CLI.
+- **Owns:** `src/web/src/lab/components/`, `src/web/src/pages/lab/`, lab routes in `App.tsx`, new files in `src/web/src/components/ui/`.
+- **Done:** build/lint pass; sandbox runs against the stub (then the real engine).
+
+### T19 — Lab scenarios 1–6
+- **Needs:** T17, T18
+- **Do:** scenario scripts, explanations and check-yourself questions for scenarios 1–6 in [lab-plan › Scenarios](lab-plan.md#scenarios).
+- **Owns:** `src/web/src/lab/scenarios/` (files 01–06).
+- **Done:** each runs to its "Must show" outcome with the default seed (test per scenario).
+
+### T20 — Lab scenarios 7–12
+- **Needs:** T17, T18
+- **Do:** same for scenarios 7–12.
+- **Owns:** `src/web/src/lab/scenarios/` (files 07–12).
+- **Done:** same as T19.
+
+### T21 — Lab docs links
+- **Needs:** T19, T20
+- **Do:** link each learn guide's **Try it** and each case study to its `/lab/...` scenario; mention the lab in docs/learn/README.md.
+- **Owns:** `docs/learn/`.
+- **Done:** every guide and case study links to a scenario that exists.

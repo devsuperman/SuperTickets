@@ -205,4 +205,4 @@ The nginx gateway (`infra/nginx/nginx.conf`) owns routing; `src/web/vite.config.
 | `/orders`, `/orders/*` | Order | yes |
 | anything else | SPA (`web`) | yes |
 
-SPA routes avoid API prefixes: `/`, `/event/:id`, `/cart`, `/order/:id`, `/manage`, `/manage/new`, `/manage/:id`.
+SPA routes avoid API prefixes: `/`, `/event/:id`, `/cart`, `/order/:id`, `/manage`, `/manage/new`, `/manage/:id`, `/lab`, `/lab/:scenario` ([lab](lab-plan.md): simulation only, no API calls).

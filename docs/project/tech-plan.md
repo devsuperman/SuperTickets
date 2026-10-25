@@ -105,7 +105,7 @@ Demo toggles (payment failure, Inventory delay/errors, notification errors) forc
 
 ## Local run
 
-`docker compose up`. Everything runs in containers; no cloud account needed.
+`docker compose up`. Everything runs in containers; no cloud account needed. The `/lab` simulation is also published as a static site on GitHub Pages ([lab-plan › Hosting](lab-plan.md#hosting)); it is a demo, not a deployment of the stack.
 
 | Service | Runs |
 |---|---|

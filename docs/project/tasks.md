@@ -13,6 +13,7 @@ graph LR
   T04 --> T17[T17 Lab engine] & T18[T18 Lab UI shell]
   T17 & T18 --> T19[T19 Lab scenarios 1-6] & T20[T20 Lab scenarios 7-12]
   T19 & T20 --> T21[T21 Lab docs links]
+  T04 --> T22[T22 Lab on GitHub Pages]
 ```
 
 | Wave | Parallel tasks |
@@ -21,7 +22,7 @@ graph LR
 | 1 | T02, T03, T04, T05, T06 |
 | 2 | T08, T09, T10, T11, T12 |
 | 3 | T16 |
-| 4 (Lab) | T17, T18 |
+| 4 (Lab) | T17, T18, T22 |
 | 5 (Lab) | T19, T20 |
 | 6 (Lab) | T21 |
 
@@ -140,3 +141,9 @@ Simulation playground; design in [lab-plan.md](lab-plan.md). Build against the e
 - **Do:** link each learn guide's **Try it** and each case study to its `/lab/...` scenario; mention the lab in docs/learn/README.md.
 - **Owns:** `docs/learn/`.
 - **Done:** every guide and case study links to a scenario that exists.
+
+### T22 — Lab on GitHub Pages
+- **Needs:** T04 (the site shows content once T18 lands)
+- **Do:** lab-only build and deploy per [lab-plan › Hosting](lab-plan.md#hosting): `build:pages` script, `base` in `vite.config.ts`, router `basename` and the lab-only branch in `App.tsx`, Pages workflow. Enable Pages (Source: GitHub Actions) in repo settings.
+- **Owns:** `.github/workflows/pages.yml`, `build:pages` in `src/web/package.json`, `base` in `src/web/vite.config.ts`, `basename` and `labOnly` in `App.tsx`.
+- **Done:** `npm run build:pages` passes; after T18, the deployed site opens `/lab` and deep links load.

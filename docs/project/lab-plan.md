@@ -10,6 +10,7 @@ An interactive playground in the SPA that **simulates** SuperTickets in the brow
 | Where | Inside the existing SPA at `/lab` and `/lab/:scenario`. |
 | Source of truth | The model mirrors [contracts.md](contracts.md) and the resilience settings in code. When either changes, update the model in the same PR. |
 | Stack | TypeScript only. UI from shadcn/ui (add with the CLI) + Tailwind; the architecture diagram is inline SVG styled with Tailwind (no diagram library). |
+| Hosting | Also published as a static, lab-only site on GitHub Pages: [Hosting](#hosting). |
 | Tests | Vitest for the simulation engine (pure functions, no DOM). `npm test` added to CI. |
 | Determinism | Seeded RNG, so a scenario replays identically and tests are stable. |
 
@@ -105,6 +106,15 @@ One module per service, mirroring the real feature folders so a reader can map t
 
 Each module opens with a comment linking to the contracts section and code file it mirrors. Shared plumbing: `runtime.ts` (scheduler: each request, handler and background loop is a generator process; code between two yields runs atomically, like a transaction), `net.ts` (HTTP hops, SQL, Redis), `resilience.ts` (retry, breaker), `outbox.ts` (outbox add + publisher), `config.ts` (every number above, with its source). Exact types: `src/web/src/lab/engine/types.ts`.
 
+## Hosting
+
+The lab needs no backend, so a lab-only build is published to GitHub Pages at https://devsuperman.github.io/SuperTickets/ (T22). This is static hosting for the demo, not part of the stack: Compose still runs everything, including `/lab`.
+
+- `npm run build:pages` = `vite build --mode pages`: `base` is `/SuperTickets/`, the router uses it as `basename`, and `App.tsx` serves only the lab routes (`/` redirects to `/lab`; customer and admin pages are left out because they need the APIs).
+- Deep links: Pages has no SPA fallback, so the build copies `index.html` to `404.html`. URLs stay clean (`/SuperTickets/lab/cache`), which the learn guides link to.
+- `.github/workflows/pages.yml` runs `npm test` and `npm run build:pages`, then deploys on every push to `main` that touches `src/web/` (or by hand).
+- One-time repo setting: Settings → Pages → Source: **GitHub Actions**.
+
 ## Code layout
 
 ```
@@ -123,3 +133,4 @@ shadcn components to add with the CLI: `tabs`, `slider`, `switch`, `tooltip`, `a
 - Engine tests assert the same invariants the backend tests do: one winner for the last ticket, idempotent replays, DLQ after 5, breaker opens and recovers, sweeper expires and releases, outbox delivers after the broker returns, Redis-down fallback.
 - Every scenario in the table runs to its "Must show" outcome with the default seed.
 - Each learn guide's **Try it** links to its lab scenario.
+- The lab is live on GitHub Pages and a deep link (e.g. `/SuperTickets/lab/sandbox`) loads.

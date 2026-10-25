@@ -49,6 +49,8 @@ Retries trigger on `HttpRequestException`, timeouts and HTTP 5xx. A `409 sold_ou
 
 ## Try it
 
+**In the browser, no Docker:** the lab simulates this: [Inventory slow or erroring](https://devsuperman.github.io/SuperTickets/lab/inventory-slow), [Redis down](https://devsuperman.github.io/SuperTickets/lab/redis-down), [Poison message](https://devsuperman.github.io/SuperTickets/lab/poison-message).
+
 Make Inventory slow or failing with a Compose override (keys from [contracts.md › Configuration](../project/contracts.md#configuration)), then drive orders:
 
 ```bash

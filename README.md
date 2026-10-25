@@ -15,7 +15,7 @@ Everything lives under [docs/](docs/README.md): `project/` (specs), `learn/` (st
 | [tech-plan.md](docs/project/tech-plan.md) | Architecture, resilience patterns, local run |
 | [contracts.md](docs/project/contracts.md) | Routes, payloads, messages, schemas, config, ports |
 | [tasks.md](docs/project/tasks.md) | Work breakdown, parallel waves |
-| [lab-plan.md](docs/project/lab-plan.md) | Planned `/lab` playground: in-browser simulation of every pattern (not built yet); published to [GitHub Pages](https://devsuperman.github.io/SuperTickets/) |
+| [lab-plan.md](docs/project/lab-plan.md) | `/lab` playground: in-browser simulation of the 12 case studies plus a sandbox; published to [GitHub Pages](https://devsuperman.github.io/SuperTickets/) |
 | [CLAUDE.md](CLAUDE.md) | Conventions for coding agents |
 
 ## AI-native
@@ -45,4 +45,4 @@ Stack: .NET 10 Minimal APIs (Vertical Slice Architecture), React + Vite + shadcn
 
 ## Status
 
-T01–T16 implemented; lab engine (T17) and GitHub Pages deploy (T22) done, lab tasks T18–T21 planned ([lab-plan.md](docs/project/lab-plan.md)). Not yet verified against a live Compose stack: run `docker compose up --build -d --wait` and `scripts/smoke.sh`. See [tasks.md](tasks.md).
+T01–T16 implemented; the lab (T17–T22) is done: engine, UI, the 12 scenarios, learn-guide links and the GitHub Pages deploy ([lab-plan.md](docs/project/lab-plan.md)). Not yet verified against a live Compose stack: run `docker compose up --build -d --wait` and `scripts/smoke.sh`. See [tasks.md](tasks.md).

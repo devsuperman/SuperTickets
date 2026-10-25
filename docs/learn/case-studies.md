@@ -1,25 +1,25 @@
 # Case studies: break it on purpose
 
-A hands-on lab. Each scenario starts the stack, makes one thing go wrong (or right) on purpose, and shows what you should see and why. Every command goes through the gateway at `http://localhost:8080` unless noted.
+A hands-on lab. Each scenario also runs as an in-browser simulation in the [lab](https://devsuperman.github.io/SuperTickets/lab) (same numbering, no Docker), linked from each section. Here, each scenario starts the stack, makes one thing go wrong (or right) on purpose, and shows what you should see and why. Every command goes through the gateway at `http://localhost:8080` unless noted.
 
 Verification status: behaviour below was checked by reading the code and config (links in each scenario). The README notes the Compose stack had not yet been run end to end when this was written, so exact log lines, timings and counts are expectations, not recordings. Places where I could not confirm something are marked **(unverified)**.
 
 ## Map: scenarios, concepts, guides
 
-| # | Scenario | Concept | Guide |
-|---|---|---|---|
-| 1 | Happy path purchase | Microservices, gateway, outbox, broker, saga happy path | [01](01-microservices-and-vertical-slice.md), [04](04-message-broker.md), [05](05-transactional-outbox.md) |
-| 2 | Cache hit vs miss, invalidation | Cache-aside, TTL jitter, version-key invalidation | [03](03-caching.md) |
-| 3 | Redis down | Graceful degradation | [03](03-caching.md), [09](09-resilience-patterns.md) |
-| 4 | Two Catalog replicas, rate limit | Load balancing, round-robin, rate limiting | [02](02-api-gateway-and-load-balancer.md) |
-| 5 | Last-ticket race | Atomic conditional update, no overselling | [08](08-concurrency-and-inventory.md) |
-| 6 | Client retry, same Idempotency-Key | Idempotent API | [06](06-idempotency.md) |
-| 7 | Payment failure | Saga compensation | [07](07-saga-and-compensation.md) |
-| 8 | Slow or failing Inventory | Timeout, retry, circuit breaker | [09](09-resilience-patterns.md) |
-| 9 | Poison message | Retries, dead-letter queue | [04](04-message-broker.md), [09](09-resilience-patterns.md) |
-| 10 | Worker crash, lost message | Expiry sweeper, state-guarded updates | [07](07-saga-and-compensation.md), [09](09-resilience-patterns.md) |
-| 11 | RabbitMQ down | Transactional outbox | [05](05-transactional-outbox.md) |
-| 12 | Duplicate delivery | Idempotent consumers | [06](06-idempotency.md), [04](04-message-broker.md) |
+| # | Scenario | Concept | Guide | Lab |
+|---|---|---|---|---|
+| 1 | Happy path purchase | Microservices, gateway, outbox, broker, saga happy path | [01](01-microservices-and-vertical-slice.md), [04](04-message-broker.md), [05](05-transactional-outbox.md) | [/lab/happy-path](https://devsuperman.github.io/SuperTickets/lab/happy-path) |
+| 2 | Cache hit vs miss, invalidation | Cache-aside, TTL jitter, version-key invalidation | [03](03-caching.md) | [/lab/cache](https://devsuperman.github.io/SuperTickets/lab/cache) |
+| 3 | Redis down | Graceful degradation | [03](03-caching.md), [09](09-resilience-patterns.md) | [/lab/redis-down](https://devsuperman.github.io/SuperTickets/lab/redis-down) |
+| 4 | Two Catalog replicas, rate limit | Load balancing, round-robin, rate limiting | [02](02-api-gateway-and-load-balancer.md) | [/lab/load-balancer](https://devsuperman.github.io/SuperTickets/lab/load-balancer) |
+| 5 | Last-ticket race | Atomic conditional update, no overselling | [08](08-concurrency-and-inventory.md) | [/lab/last-ticket](https://devsuperman.github.io/SuperTickets/lab/last-ticket) |
+| 6 | Client retry, same Idempotency-Key | Idempotent API | [06](06-idempotency.md) | [/lab/idempotency](https://devsuperman.github.io/SuperTickets/lab/idempotency) |
+| 7 | Payment failure | Saga compensation | [07](07-saga-and-compensation.md) | [/lab/payment-failure](https://devsuperman.github.io/SuperTickets/lab/payment-failure) |
+| 8 | Slow or failing Inventory | Timeout, retry, circuit breaker | [09](09-resilience-patterns.md) | [/lab/inventory-slow](https://devsuperman.github.io/SuperTickets/lab/inventory-slow) |
+| 9 | Poison message | Retries, dead-letter queue | [04](04-message-broker.md), [09](09-resilience-patterns.md) | [/lab/poison-message](https://devsuperman.github.io/SuperTickets/lab/poison-message) |
+| 10 | Worker crash, lost message | Expiry sweeper, state-guarded updates | [07](07-saga-and-compensation.md), [09](09-resilience-patterns.md) | [/lab/worker-crash](https://devsuperman.github.io/SuperTickets/lab/worker-crash) |
+| 11 | RabbitMQ down | Transactional outbox | [05](05-transactional-outbox.md) | [/lab/rabbitmq-down](https://devsuperman.github.io/SuperTickets/lab/rabbitmq-down) |
+| 12 | Duplicate delivery | Idempotent consumers | [06](06-idempotency.md), [04](04-message-broker.md) | [/lab/duplicate-delivery](https://devsuperman.github.io/SuperTickets/lab/duplicate-delivery) |
 
 Observability for all of them (correlation IDs, health, SQL and RabbitMQ views): [10-observability-and-testing.md](10-observability-and-testing.md).
 
@@ -100,6 +100,8 @@ curl -s -u guest:guest http://localhost:15672/api/queues/%2F | jq -r '.[] | "\(.
 
 **Goal.** See the whole flow once, so every later failure has something to be compared with: gateway, Catalog, Inventory, Order, outbox, RabbitMQ, Worker. Guides: [01](01-microservices-and-vertical-slice.md), [04](04-message-broker.md), [05](05-transactional-outbox.md).
 
+**Lab.** Watch it in the browser first, no Docker needed: [Happy path](https://devsuperman.github.io/SuperTickets/lab/happy-path).
+
 **Setup.** Make payment deterministic (default is a 10 % random decline):
 
 ```bash
@@ -160,6 +162,8 @@ Reset the override when done (see "Changing config").
 
 **Goal.** Watch cache-aside and how an admin write invalidates it. Guide: [03-caching.md](03-caching.md).
 
+**Lab.** Watch it in the browser first, no Docker needed: [Cache hit, miss and invalidation](https://devsuperman.github.io/SuperTickets/lab/cache).
+
 **Setup.** Defaults (`Cache__TtlSeconds: "60"`). To have more time to poke around, raise it with an override on `catalog-api` (`Cache__TtlSeconds: "300"`) and `docker compose up -d --no-deps --no-build --force-recreate catalog-api`.
 
 **Steps.**
@@ -205,6 +209,8 @@ docker compose exec redis redis-cli --scan --pattern 'catalog:*'    # old catalo
 
 **Goal.** Show that the cache is optional: reads fall back to Postgres, and the system stays up. Guides: [03-caching.md](03-caching.md), [09-resilience-patterns.md](09-resilience-patterns.md).
 
+**Lab.** Watch it in the browser first, no Docker needed: [Redis down](https://devsuperman.github.io/SuperTickets/lab/redis-down).
+
 **Setup.** Default stack and a cached event.
 
 **Steps.**
@@ -245,6 +251,8 @@ curl -si $BASE/events/$EID | grep -i x-cache          # MISS then HIT again
 ## 4. Load balancing across the 2 Catalog replicas (X-Upstream) and rate limiting (429)
 
 **Goal.** See round-robin over replicas, and the gateway's per-client rate limit. Guide: [02-api-gateway-and-load-balancer.md](02-api-gateway-and-load-balancer.md).
+
+**Lab.** Watch it in the browser first, no Docker needed: [Load balancer and rate limit](https://devsuperman.github.io/SuperTickets/lab/load-balancer).
 
 **Setup.** Default stack (`catalog-api` has `deploy: { replicas: 2 }`).
 
@@ -289,6 +297,8 @@ curl -s -o /dev/null -w '%{http_code}\n' $BASE/inventory/events/$EID   # 404 fro
 
 **Goal.** Prove two customers cannot buy the last ticket. Guide: [08-concurrency-and-inventory.md](08-concurrency-and-inventory.md).
 
+**Lab.** Watch it in the browser first, no Docker needed: [Last-ticket race](https://devsuperman.github.io/SuperTickets/lab/last-ticket).
+
 **Setup.** Default stack. For a clean read of final state set `Payment__FailureRate: "0"` on the worker (otherwise a 10 % decline on the winner would release the ticket afterwards).
 
 **Steps.**
@@ -329,6 +339,8 @@ This scenario is also covered by required tests (see [tech-plan.md › Testing](
 
 **Goal.** Safely repeat `POST /orders` (network timeout, double click) without creating a second order. Guide: [06-idempotency.md](06-idempotency.md).
 
+**Lab.** Watch it in the browser first, no Docker needed: [Idempotency-Key](https://devsuperman.github.io/SuperTickets/lab/idempotency).
+
 **Steps.**
 
 ```bash
@@ -367,6 +379,8 @@ Try the resume path after scenario 8: send a request while Inventory is failing 
 ## 7. Payment failure: saga compensation restores stock
 
 **Goal.** A multi-service operation has no distributed transaction; failure is undone by a compensating action. Guide: [07-saga-and-compensation.md](07-saga-and-compensation.md).
+
+**Lab.** Watch it in the browser first, no Docker needed: [Payment failure](https://devsuperman.github.io/SuperTickets/lab/payment-failure).
 
 **Setup.** Force every payment to fail:
 
@@ -418,6 +432,8 @@ Reset the override when done.
 ## 8. Inventory slow or erroring: timeout, retry, circuit breaker open, 503
 
 **Goal.** Watch the HTTP resilience pipeline Order uses for reserve. Guide: [09-resilience-patterns.md](09-resilience-patterns.md).
+
+**Lab.** Watch it in the browser first, no Docker needed: [Inventory slow or erroring](https://devsuperman.github.io/SuperTickets/lab/inventory-slow).
 
 **Setup.** Make Inventory reserve take 3 s (longer than Order's 2 s timeout). Create the event first; the toggles only affect reserve, not capacity updates or availability reads.
 
@@ -479,6 +495,8 @@ Then re-send one of the earlier keys (you need to copy it from `sql_orders "sele
 
 **Goal.** A message that always fails must not loop forever. Guides: [04-message-broker.md](04-message-broker.md), [09-resilience-patterns.md](09-resilience-patterns.md).
 
+**Lab.** Watch it in the browser first, no Docker needed: [Poison message](https://devsuperman.github.io/SuperTickets/lab/poison-message).
+
 **Setup.** Notification handler always throws, payment always succeeds:
 
 ```bash
@@ -531,6 +549,8 @@ The DLQ copy remains until you purge it in the UI.
 ## 10. Worker crash or lost message: the pending order expires via the sweeper
 
 **Goal.** If an async step never happens, the order must not stay `pending` forever and stock must not stay locked. Guides: [07-saga-and-compensation.md](07-saga-and-compensation.md), [09-resilience-patterns.md](09-resilience-patterns.md).
+
+**Lab.** Watch it in the browser first, no Docker needed: [Worker crash](https://devsuperman.github.io/SuperTickets/lab/worker-crash).
 
 **Setup.** Shorten expiry so you do not wait 5 minutes (minimum is 1: the setting is an integer number of minutes). Sweep every 5 s:
 
@@ -585,6 +605,8 @@ Variant B, a truly lost message: instead of stopping the worker, open the Rabbit
 
 **Goal.** The order and its event are saved atomically, and the broker is allowed to be down. Guide: [05-transactional-outbox.md](05-transactional-outbox.md).
 
+**Lab.** Watch it in the browser first, no Docker needed: [RabbitMQ down](https://devsuperman.github.io/SuperTickets/lab/rabbitmq-down).
+
 **Setup.** Default stack; make payment deterministic if you want to see `paid` (override worker `Payment__FailureRate: "0"`). Use `stop`/`start`, not `down`, so the container keeps its queues. Do this within 5 minutes or the sweeper will expire the order (or raise `Orders__PendingTimeoutMinutes`).
 
 **Steps.**
@@ -623,6 +645,8 @@ order_json $OID                                                    # paid, ticke
 ## 12. Duplicate message delivery is harmless (replay)
 
 **Goal.** Redeliver messages that were already processed and show that nothing changes. Guides: [06-idempotency.md](06-idempotency.md), [04-message-broker.md](04-message-broker.md).
+
+**Lab.** Watch it in the browser first, no Docker needed: [Duplicate delivery](https://devsuperman.github.io/SuperTickets/lab/duplicate-delivery).
 
 **Setup.** Complete one paid order with tickets (scenario 1, worker `Payment__FailureRate: "0"`). Order id in `$OID`, event in `$EID`.
 

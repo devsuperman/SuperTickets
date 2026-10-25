@@ -58,6 +58,8 @@ upstream catalog { zone catalog 64k; server catalog-api:8080 resolve; }
 
 ## Try it
 
+**In the browser, no Docker:** the lab simulates this: [Load balancer and rate limit](https://devsuperman.github.io/SuperTickets/lab/load-balancer).
+
 ```bash
 docker compose up --build -d --wait
 # round-robin: expect two different X-Upstream values

@@ -21,11 +21,13 @@ SuperTickets is small on purpose: every pattern here exists because a real failu
 
 Then do the hands-on lab: [Case studies](case-studies.md) (break the system on purpose and watch each pattern respond).
 
+No Docker at hand? The [lab](https://devsuperman.github.io/SuperTickets/lab) simulates the whole system in the browser: the same 12 scenarios with an animated architecture diagram, the database, cache and queue contents, and Do / See / Why for every step, plus a sandbox. It runs the same rules and numbers as the code; it also ships with the app at `/lab` (http://localhost:8080/lab with Compose).
+
 ## How to study
 
 1. Read the guide, then open the linked code.
 2. Run the stack: `docker compose up --build -d --wait` (app at http://localhost:8080, RabbitMQ UI at http://localhost:15672, guest/guest).
-3. Do the guide's **Try it** section, then answer **Check yourself** without looking.
+3. Do the guide's **Try it** section (or its lab scenario), then answer **Check yourself** without looking.
 4. Finish with the matching scenario in [case-studies.md](case-studies.md).
 
 Authoritative specs (routes, schemas, config, flows) are in [../project/](../project/); the guides link to them rather than repeat them.

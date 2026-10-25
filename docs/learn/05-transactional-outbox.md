@@ -55,6 +55,8 @@ The loop polls every `PollInterval` (1 s) and loops immediately while batches ar
 
 ## Try it
 
+**In the browser, no Docker:** the lab simulates this: [RabbitMQ down](https://devsuperman.github.io/SuperTickets/lab/rabbitmq-down).
+
 ```bash
 docker compose up --build -d --wait
 EVENT_ID=$(curl -s http://localhost:8080/events | jq -r '.[0].id')

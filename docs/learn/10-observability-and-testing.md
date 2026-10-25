@@ -51,6 +51,8 @@ client ─X-Correlation-Id─▶ nginx ─▶ Order ─header─▶ Inventory
 
 ## Try it
 
+**In the browser, no Docker:** the lab simulates this: [Happy path](https://devsuperman.github.io/SuperTickets/lab/happy-path), [Sandbox](https://devsuperman.github.io/SuperTickets/lab/sandbox). In the Log tab, click a correlation id to follow one request across services.
+
 ```bash
 dotnet test                                   # needs Docker for Testcontainers
 dotnet test --filter "FullyQualifiedName~Redis_down"

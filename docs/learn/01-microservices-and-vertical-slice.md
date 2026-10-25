@@ -55,6 +55,8 @@ Each slice exposes a static `Map(...)` that `Program.cs` calls (for example `Cre
 
 ## Try it
 
+**In the browser, no Docker:** the lab simulates this: [Happy path](https://devsuperman.github.io/SuperTickets/lab/happy-path), [Sandbox](https://devsuperman.github.io/SuperTickets/lab/sandbox).
+
 ```bash
 docker compose up --build -d --wait
 docker compose ps                       # 4 app services + gateway, web, postgres, redis, rabbitmq

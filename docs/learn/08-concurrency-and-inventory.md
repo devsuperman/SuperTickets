@@ -47,6 +47,8 @@ WHERE event_id = @id AND @new >= total_tickets - available
 
 ## Try it
 
+**In the browser, no Docker:** the lab simulates this: [Last-ticket race](https://devsuperman.github.io/SuperTickets/lab/last-ticket).
+
 ```bash
 docker compose up --build -d --wait
 EV=$(curl -s -X POST localhost:8080/admin/events -H 'X-Api-Key: dev-admin-key' -H 'Content-Type: application/json' \

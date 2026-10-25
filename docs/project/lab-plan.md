@@ -59,31 +59,35 @@ Same 12 as [case-studies.md](../learn/case-studies.md), one script each.
 `src/web/src/lab/engine/`: pure TypeScript, no React. A discrete-event simulation over a virtual clock (ms), so "5 minutes" can be fast-forwarded.
 
 ```ts
-type NodeId = 'browser' | 'gateway' | 'catalog-1' | 'catalog-2' | 'redis' | 'inventory'
+type NodeId = 'browser' | 'gateway' | 'web' | 'catalog-1' | 'catalog-2' | 'redis' | 'inventory'
   | 'order' | 'rabbitmq' | 'worker' | 'postgres'
 
 type SimEvent = {           // one arrow in the diagram, one line in the log
   t: number                 // virtual ms
   from: NodeId; to: NodeId
-  kind: 'http' | 'response' | 'sql' | 'cache' | 'publish' | 'deliver' | 'ack' | 'nack' | 'dlq' | 'timer'
+  kind: 'http' | 'response' | 'sql' | 'cache' | 'publish' | 'deliver' | 'ack' | 'nack' | 'dlq'
+    | 'retry' | 'breaker' | 'timer' | 'log'
   label: string             // e.g. "POST /inventory/reservations", "UPDATE stock ... 0 rows"
   correlationId?: string
   status?: number
+  error?: boolean           // timeout, refused, 5xx, failed handler
   explain?: string          // key into the scenario's explanation text
 }
 
 type Action =               // what the user (or a scenario script) can do
-  | { type: 'request'; method: string; path: string; headers?: Record<string, string>; body?: unknown }
+  | { type: 'request'; requestId?: string; method: string; path: string; headers?: Record<string, string>; body?: unknown }
   | { type: 'burst'; count: number; path: string }
-  | { type: 'setToggle'; key: keyof Toggles; value: number | boolean }
-  | { type: 'redeliver'; queue: string; messageId: string }
+  | { type: 'setToggle'; key: keyof Toggles; value: number | boolean }   // failure rates, redisUp, rabbitmqUp, workerUp, inventoryUp
+  | { type: 'redeliver'; messageId: string }                            // publish an outbox row again (duplicate delivery)
 
 interface Sim {
-  readonly state: SimState  // snapshot for the inspector
+  readonly state: SimState  // deep copy for the inspector; state.requests holds each browser request and its response
   dispatch(action: Action): void
   advance(ms: number): SimEvent[]   // run the clock, return what happened
   reset(seed: number): void
 }
+
+createSim({ seed?, toggles?, events? })   // events: catalog + stock rows that exist before the scenario starts
 ```
 
 `SimState` holds what the real stores hold, with the [schemas](contracts.md#databases) column names: `events`, `stock`, `reservations`, `orders`, `payments`, `tickets`, `outbox`, Redis keys with expiry, queues and DLQs (messages with delivery count), breaker (`closed | open | half-open`, window samples, opened at), rate-limit bucket, toggles, per-service up/down.
@@ -99,7 +103,7 @@ One module per service, mirroring the real feature folders so a reader can map t
 | `broker.ts` | `SuperTickets.Shared/Messaging` | topic routing, quorum delivery limit 5 → DLQ, consumer idle 250 ms |
 | `worker.ts` | `Worker/Features` | payment (failure rate 0.1) and notification handlers, idempotent writes |
 
-Each module opens with a comment linking to the contracts section and code file it mirrors.
+Each module opens with a comment linking to the contracts section and code file it mirrors. Shared plumbing: `runtime.ts` (scheduler: each request, handler and background loop is a generator process; code between two yields runs atomically, like a transaction), `net.ts` (HTTP hops, SQL, Redis), `resilience.ts` (retry, breaker), `outbox.ts` (outbox add + publisher), `config.ts` (every number above, with its source). Exact types: `src/web/src/lab/engine/types.ts`.
 
 ## Code layout
 

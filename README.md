@@ -41,7 +41,7 @@ Stack: .NET 10 Minimal APIs (Vertical Slice Architecture), React + Vite + shadcn
 ## Run
 
 - **Local:** `docker compose up --build -d --wait` (Postgres, Redis, RabbitMQ, nginx gateway); the app is at http://localhost:8080, RabbitMQ UI at http://localhost:15672 (guest/guest). See [tech-plan.md](docs/project/tech-plan.md#local-run). Verify with `scripts/smoke.sh [BASE_URL] [--no-toggles]` (`--no-toggles` skips the failure-toggle checks; about 3 min with them).
-- **Build and test:** `dotnet build` and `dotnet test` (Testcontainers needs Docker); SPA: `npm ci && npm run build` in `src/web`. More commands in [CLAUDE.md](CLAUDE.md#commands).
+- **Build and test:** `dotnet build` and `dotnet test` (Testcontainers needs Docker); SPA: `npm ci && npm test && npm run build` in `src/web`. More commands in [CLAUDE.md](CLAUDE.md#commands).
 
 ## Status
 

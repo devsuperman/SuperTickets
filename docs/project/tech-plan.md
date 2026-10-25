@@ -73,7 +73,10 @@ web/src/
   components/ui/    → shadcn components (generated, edit sparingly)
   pages/customer/   pages/admin/
   cart/             → localStorage cart
+  lab/              → in-browser simulation playground (engine, scenarios, components)
 ```
+
+The lab (`/lab`) simulates the whole system in the browser to teach the patterns below; it calls no API. Design: [lab-plan.md](lab-plan.md).
 
 ## Resilience patterns
 

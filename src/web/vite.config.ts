@@ -7,7 +7,9 @@ import { defineConfig } from 'vite'
 // (docs/project/contracts.md#routing). In Compose the browser talks to the gateway directly.
 const api = { target: process.env.API_URL ?? 'http://localhost:8080', changeOrigin: true }
 
-export default defineConfig({
+// `--mode pages` builds the lab-only site for GitHub Pages, served under /SuperTickets/ (docs/project/lab-plan.md#hosting).
+export default defineConfig(({ mode }) => ({
+  base: mode === 'pages' ? '/SuperTickets/' : '/',
   plugins: [react(), tailwindcss()],
   resolve: { alias: { '@': path.resolve(import.meta.dirname, 'src') } },
   server: {
@@ -15,4 +17,4 @@ export default defineConfig({
     port: 5173,
     proxy: { '/events': api, '/admin': api, '/orders': api },
   },
-})
+}))

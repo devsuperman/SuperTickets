@@ -16,6 +16,7 @@ docker build -f src/Catalog.Api/Dockerfile -t catalog-api .   # image per servic
 docker compose up --build -d --wait            # full local stack
 scripts/smoke.sh [BASE_URL] [--no-toggles]     # e2e Definition of done (default http://localhost:8080; ~1-2 min with toggles)
 npm test --prefix src/web                      # SPA unit tests (Vitest: lab simulation engine)
+npm run build:pages --prefix src/web           # lab-only build for GitHub Pages (base /SuperTickets/)
 ```
 
 ## Docs

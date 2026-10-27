@@ -55,6 +55,8 @@ Worker    --PaymentSucceeded--> exchange --> notification-queue --> Worker Notif
 
 ## Try it
 
+**In the browser, no Docker:** the lab simulates this: [Happy path](https://devsuperman.github.io/SuperTickets/lab/happy-path), [Poison message](https://devsuperman.github.io/SuperTickets/lab/poison-message), [Duplicate delivery](https://devsuperman.github.io/SuperTickets/lab/duplicate-delivery).
+
 ```bash
 docker compose up --build -d --wait
 # RabbitMQ UI: http://localhost:15672  (guest / guest) -> Exchanges, Queues, Bindings

@@ -41,6 +41,8 @@ Tests that replay each operation: `Same_key_gives_one_order_and_one_outbox_row` 
 
 ## Try it
 
+**In the browser, no Docker:** the lab simulates this: [Idempotency-Key](https://devsuperman.github.io/SuperTickets/lab/idempotency), [Duplicate delivery](https://devsuperman.github.io/SuperTickets/lab/duplicate-delivery).
+
 ```bash
 docker compose up --build -d --wait
 EV=$(curl -s -X POST localhost:8080/admin/events -H 'X-Api-Key: dev-admin-key' -H 'Content-Type: application/json' \

@@ -121,7 +121,9 @@ The lab needs no backend, so a lab-only build is published to GitHub Pages at ht
 web/src/
   lab/engine/       → engine, one module per service, rng, types (+ *.test.ts)
   lab/scenarios/    → one file per scenario: steps, initial state, explanations, questions
-  lab/components/   → ArchitectureDiagram, Inspector, Controls, ExplainPanel, EventLog
+                      (+ common.ts helpers, run.ts runner shared by the UI and the per-scenario tests)
+  lab/components/   → ArchitectureDiagram, Inspector, Controls, ExplainPanel, EventLog, PlayerBar,
+                      usePlayer (plays the steps on the virtual clock; long waits fast-forwarded ×100)
   pages/lab/        → LabHome (scenario list), LabScenario (/lab/:scenario)
 ```
 

@@ -52,6 +52,8 @@ Compensation paths:
 
 ## Try it
 
+**In the browser, no Docker:** the lab simulates this: [Payment failure](https://devsuperman.github.io/SuperTickets/lab/payment-failure), [Worker crash](https://devsuperman.github.io/SuperTickets/lab/worker-crash).
+
 ```bash
 # Force every payment to fail: set Payment__FailureRate=1 on worker (docker-compose.yml), then
 docker compose up -d worker

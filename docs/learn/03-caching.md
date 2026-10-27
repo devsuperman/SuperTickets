@@ -57,6 +57,8 @@ Source of truth: [contracts.md > Cache](../project/contracts.md#cache-catalog).
 
 ## Try it
 
+**In the browser, no Docker:** the lab simulates this: [Cache hit, miss and invalidation](https://devsuperman.github.io/SuperTickets/lab/cache), [Redis down](https://devsuperman.github.io/SuperTickets/lab/redis-down).
+
 ```bash
 docker compose up --build -d --wait
 
